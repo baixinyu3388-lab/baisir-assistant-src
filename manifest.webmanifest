@@ -1,0 +1,19 @@
+{
+  "id": "baisir-assistant",
+  "name": "白sir 的个人助手",
+  "short_name": "白sir助手",
+  "description": "今日行程、天气、课表、待办提醒与护肤打卡",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./?sharecode=XQYKQCQM2D",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#eef5f3",
+  "background_color": "#eef5f3",
+  "icons": [
+    { "src": "icon.svg?sharecode=XQYKQCQM2D", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icon-192.png?sharecode=XQYKQCQM2D", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png?sharecode=XQYKQCQM2D", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

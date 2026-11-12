@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef5f3">
+<meta name="color-scheme" content="light">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="白sir助手">
+<meta name="format-detection" content="telephone=no">
+<title>白sir 的个人助手</title>
+<!-- WorkBuddy 网关要求每个请求都带 sharecode；在自有服务器上这个参数会被忽略，无害 -->
+<link rel="manifest" href="manifest.webmanifest?sharecode=XQYKQCQM2D">
+<link rel="icon" href="icon.svg?sharecode=XQYKQCQM2D" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?sharecode=XQYKQCQM2D">
+<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.0.0">
+</head>
+<body>
+
+<!-- ============ 口令锁（未解锁时，课表 / 待办不进 DOM） ============ -->
+<div class="lock" id="lockView" hidden>
+  <form class="lock-card" id="lockForm" autocomplete="off">
+    <div class="lock-mark" aria-hidden="true">白</div>
+    <h1>白sir 的个人助手</h1>
+    <p>输入 4 位口令解锁。只防别人拿到链接随手点开，<b>不是加密</b>。</p>
+    <label class="sr-only" for="pinInput">4 位口令</label>
+    <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="off">
+    <button class="btn btn-primary btn-block" type="submit">解锁</button>
+    <p class="lock-msg" id="lockMsg" role="alert"></p>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div id="appRoot"></div>
+
+<template id="appTpl">
+<div class="app">
+
+  <!-- 导航：手机 = 底部 tab；电脑 = 左侧栏 -->
+  <nav class="tabbar" aria-label="主导航">
+    <div class="brand">
+      <img src="icon.svg?sharecode=XQYKQCQM2D" alt="" width="36" height="36">
+      <div><b>白sir 助手</b><span>Daily Assistant</span></div>
+    </div>
+    <a class="tab" href="#/today" data-tab="today">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <span>今日</span></a>
+    <a class="tab" href="#/timetable" data-tab="timetable">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16" rx="3"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4M7.5 13.5h3M13.5 13.5h3M7.5 17h3"/></svg>
+      <span>课表</span></a>
+    <a class="tab" href="#/todos" data-tab="todos">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg>
+      <span>待办</span><i class="tab-dot" id="todoDot" hidden></i></a>
+    <a class="tab" href="#/skin" data-tab="skin">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.5 4.2 6 7.4 6 10.5a6 6 0 0 1-12 0C6 10.4 8.5 7.2 12 3z"/><path d="M9.5 14.5a2.5 2.5 0 0 0 2.5 2.5"/></svg>
+      <span>护肤</span></a>
+    <a class="tab" href="#/settings" data-tab="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      <span>设置</span></a>
+    <p class="brand-foot">v3.0 · 数据只在本机</p>
+  </nav>
+
+  <main class="main" id="main" tabindex="-1">
+
+    <!-- ===================== 今日 ===================== -->
+    <section class="view" data-view="today" aria-labelledby="hToday">
+      <header class="today-head">
+        <div class="today-head-text">
+          <p class="eyebrow" id="todayDate">—</p>
+          <h1 id="hToday">今天</h1>
+          <p class="today-line" id="todayLine">—</p>
+        </div>
+        <div class="ring" id="ring" role="img" aria-label="今日完成度">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <circle cx="32" cy="32" r="26" class="ring-bg"/>
+            <circle cx="32" cy="32" r="26" class="ring-fg" id="ringArc" stroke-dasharray="163.36" stroke-dashoffset="163.36"/>
+          </svg>
+          <span class="ring-val"><b id="ringPct">0%</b><small>完成</small></span>
+        </div>
+      </header>
+      <div class="chip-row" id="todayChips"></div>
+
+      <div class="today-grid">
+        <!-- 天气 -->
+        <article class="card wx" id="wxCard" aria-labelledby="wxTitle">
+          <div class="wx-head">
+            <div>
+              <h2 class="sr-only" id="wxTitle">天气</h2>
+              <p class="wx-loc">长沙岳麓 · 中南大学南校区</p>
+              <div class="wx-now">
+                <span class="wx-temp" id="wxTemp">--°</span>
+                <span class="wx-desc"><b id="wxDesc">获取中…</b><small id="wxRange">—</small></span>
+              </div>
+            </div>
+            <button class="btn btn-icon" type="button" data-act="wx-refresh" id="wxRetry" aria-label="重新获取天气" title="重新获取天气">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+            </button>
+          </div>
+          <dl class="wx-stats" id="wxStats"></dl>
+          <button type="button" class="advice" data-act="adv-toggle" aria-expanded="false" aria-label="穿衣与防晒建议，点按展开或收起">
+            <span class="adv adv-cloth"><b aria-hidden="true">穿</b><span><span class="adv-short" id="advClothS">—</span><span class="adv-full" id="advCloth">—</span></span></span>
+            <span class="adv adv-sun"><b aria-hidden="true">晒</b><span><span class="adv-short" id="advSunS">—</span><span class="adv-full" id="advSun">—</span></span></span>
+            <span class="adv-more">展开完整建议</span>
+          </button>
+          <p class="wx-foot"><span id="wxStamp">—</span><span>数据 Open-Meteo</span></p>
+        </article>
+
+        <!-- 时间轴 -->
+        <article class="today-timeline" aria-labelledby="hTl">
+          <div class="block-head">
+            <h2 id="hTl">今日行程</h2>
+            <span class="muted" id="tlHint">点标题看细节，点圆圈打勾</span>
+          </div>
+          <ol class="tl" id="timeline"></ol>
+          <details class="help">
+            <summary>为什么早上不用洗面奶？</summary>
+            <p>清洁靠表面活性剂，不靠水温。宿舍冷水完全够用，别跑楼梯打热水 —— 超过 38℃ 会脱脂、扩张血管、加重红肿痘。中午油了就清水冲一下，不用洗面奶。</p>
+          </details>
+          <details class="help">
+            <summary>起床 / 出门时间怎么算的？</summary>
+            <p>最早一节课 ≤ 08:30 判「有早八」，起床 = 上课前 45 分钟、出门 = 前 20 分钟；08:30–10:00 之间起床提前 50 分钟；10 点以后或没课就按 08:30 起床 / 09:20 出门（周末 09:00 / 09:50）。晚间护肤固定 21:30，不随课表变。改课表不会丢今天已打的勾。</p>
+          </details>
+        </article>
+
+        <!-- 今晚 + 待办 -->
+        <aside class="today-side">
+          <article class="tonight" aria-labelledby="tonightTitle">
+            <p class="tonight-k">今晚 21:30 · <span id="tonightTag">—</span></p>
+            <h2 class="tonight-t" id="tonightTitle">—</h2>
+            <p class="tonight-d" id="tonightDesc">—</p>
+          </article>
+          <article class="card soon" aria-labelledby="hSoon">
+            <div class="block-head">
+              <h2 id="hSoon">48 小时内待办</h2>
+              <a class="link" href="#/todos">全部 ›</a>
+            </div>
+            <ul class="soon-list" id="soonList"></ul>
+          </article>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===================== 课表 ===================== -->
+    <section class="view" data-view="timetable" aria-labelledby="hTt" hidden>
+      <header class="view-head">
+        <div>
+          <h1 id="hTt">课表</h1>
+          <p class="view-sub" id="ttTerm">—</p>
+        </div>
+        <button class="btn btn-primary" type="button" data-act="tt-new">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>添加课程
+        </button>
+      </header>
+
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="显示范围" id="ttScope">
+          <button type="button" data-act="tt-scope" data-v="week" aria-pressed="true">本周要上的</button>
+          <button type="button" data-act="tt-scope" data-v="all" aria-pressed="false">全部课程</button>
+        </div>
+        <span class="muted">点课程可修改或删除</span>
+      </div>
+
+      <div class="tt-grid" id="ttList"></div>
+
+      <details class="card-details">
+        <summary>粘贴文本批量导入 / 备份</summary>
+        <div class="details-body">
+          <p class="hint">一行一节：<code>周一 08:00-09:40 课程名 地点 周次</code>。周次可写「9-12周」「单周 11-17」「双周 10-20」「1,3,5-8」，不写 = 每周。<b>导入会覆盖现有课表。</b></p>
+          <label class="field">
+            <span>课表文本</span>
+            <textarea id="ttText" rows="5" placeholder="周一 10:00-11:40 新生课 潇湘校区-D座121 9-12周&#10;周二 08:00-09:40 高等数学A（一） 潇湘校区-B座212 双周 10-20&#10;周五 16:00-17:40 大学生心理健康教育（一） 潇湘校区-B座412 单周 11-17"></textarea>
+          </label>
+          <div class="btn-row">
+            <button class="btn btn-primary" type="button" data-act="tt-import">解析并导入</button>
+            <button class="btn" type="button" data-act="tt-only-import">只导入课表备份（JSON）</button>
+            <button class="btn btn-danger-ghost" type="button" data-act="tt-clear">清空整周</button>
+          </div>
+          <input type="file" id="ttOnlyFile" accept="application/json,.json" hidden>
+        </div>
+      </details>
+    </section>
+
+    <!-- ===================== 待办 ===================== -->
+    <section class="view" data-view="todos" aria-labelledby="hTodo" hidden>
+      <header class="view-head">
+        <div>
+          <h1 id="hTodo">待办与提醒</h1>
+          <p class="view-sub" id="tqStat">—</p>
+        </div>
+      </header>
+      <div class="subtabs" role="tablist" aria-label="待办分区">
+        <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="list">清单</button>
+        <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="notice">转发班长通知</button>
+        <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="remind">日历 / 通知</button>
+      </div>
+
+      <!-- 清单 -->
+      <div class="subview" data-sub="todos:list">
+        <div class="split">
+          <form class="card form-card" id="todoForm" autocomplete="off">
+            <h2 class="card-title">新建待办</h2>
+            <label class="field">
+              <span>事项</span>
+              <input id="tdTitle" placeholder="交安全工程作业 / 收班费" required>
+            </label>
+            <div class="field-2">
+              <label class="field"><span>类型</span><select id="tdType"></select></label>
+              <label class="field"><span>对象</span><input id="tdAudience" placeholder="全班 / 宿舍 / 自己"></label>
+            </div>
+            <div class="field-2">
+              <label class="field"><span>截止日期</span><input type="date" id="tdDate" required></label>
+              <label class="field"><span>截止时间（24 小时）</span><input class="t24" id="tdTime" inputmode="numeric" placeholder="20:00" maxlength="5" value="20:00" required></label>
+            </div>
+            <p class="hint" id="tdLeadHint">—</p>
+            <button class="btn btn-primary btn-block" type="submit">添加待办</button>
+          </form>
+
+          <div class="todo-col">
+            <div class="filters" role="group" aria-label="筛选" id="todoQuery">
+              <button type="button" data-act="tq" data-tq="all" aria-pressed="true">全部</button>
+              <button type="button" data-act="tq" data-tq="open" aria-pressed="false">未完成</button>
+              <button type="button" data-act="tq" data-tq="today" aria-pressed="false">今天</button>
+              <button type="button" data-act="tq" data-tq="tomorrow" aria-pressed="false">明天</button>
+              <button type="button" data-act="tq" data-tq="week" aria-pressed="false">本周</button>
+              <button type="button" data-act="tq" data-tq="done" aria-pressed="false">已完成</button>
+              <button type="button" data-act="tq" data-tq="risk" aria-pressed="false" class="f-risk">按风险排序</button>
+            </div>
+            <label class="search">
+              <span class="sr-only">搜索待办</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input id="tqText" type="search" placeholder="搜事项 / 对象">
+            </label>
+            <ul class="todo-list" id="todoList"></ul>
+            <details class="help">
+              <summary>紧急程度怎么算的（LS 风险矩阵口径）</summary>
+              <div>
+                <p>类比安全工程<b>风险矩阵法（LS）</b>：<b>R = L × S</b>。</p>
+                <p><b>L 遗漏 / 逾期可能性</b>：已完成=1；&gt;72h=1；≤72h=2；≤24h=3；≤2h 或已逾期=4。</p>
+                <p><b>S 后果严重度</b>：护肤=1；会议集合=2；班长通知 / 作业 DDL / 缴费=3；涉及全班、学院、辅导员 +1；含「逾期不候 / 不可补交 / 务必」+1，上限 4。</p>
+                <div class="tbl-scroll"><table class="mx">
+                  <tr><th>L / S</th><th>1 影响很小</th><th>2 一般</th><th>3 较大</th><th>4 特别重大</th></tr>
+                  <tr><th>4 极可能</th><td class="c-yellow">黄</td><td class="c-orange">橙</td><td class="c-red">红</td><td class="c-red">红</td></tr>
+                  <tr><th>3 可能</th><td class="c-yellow">黄</td><td class="c-orange">橙</td><td class="c-orange">橙</td><td class="c-red">红</td></tr>
+                  <tr><th>2 较不可能</th><td class="c-blue">蓝</td><td class="c-yellow">黄</td><td class="c-orange">橙</td><td class="c-orange">橙</td></tr>
+                  <tr><th>1 基本不可能</th><td class="c-blue">蓝</td><td class="c-blue">蓝</td><td class="c-yellow">黄</td><td class="c-yellow">黄</td></tr>
+                </table></div>
+                <p>红=重大风险（立即处理）· 橙=较大风险（双提醒）· 黄=一般风险（常规提醒）· 蓝=低风险（跟踪即可）。<b>这是待办优先级类比，不是真正的生产安全评价。</b></p>
+                <p><b>默认提前量：</b>班长通知 = 提前 1 天首次 + 截止前 2 小时二次催；作业 / DDL = 提前 1 天；会议集合 = 30 分钟；缴费生活 = 2 小时。每天 21:00 顺手检查明天有没有待办。</p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <!-- 班长通知转换 -->
+      <div class="subview" data-sub="todos:notice" hidden>
+        <article class="card">
+          <h2 class="card-title">班长口吻 → 同学口吻</h2>
+          <p class="hint">逐句改措辞、<b>不删句</b>；仍含「班长」的句子会单独标出来给你人工核。纯本地，不联网、不上传班级通知。</p>
+          <div class="cvt-grid">
+            <label class="field">
+              <span>① 原文（老师 / 辅导员发给班长的）</span>
+              <textarea id="cvtRaw" rows="7" placeholder="例：请各班班长于11月10日22:00前收齐本班同学的安全教育承诺书（纸质签名版），以班级为单位交到潇湘校区B座201辅导员办公室，逾期不候，请务必通知到每位同学。"></textarea>
+            </label>
+            <label class="field">
+              <span>② 生成文案（可直接改，改完再复制 / 建待办）</span>
+              <textarea id="cvtOut" rows="7" placeholder="点「解析并生成」"></textarea>
+            </label>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" type="button" data-act="cvt-go">解析并生成</button>
+            <button class="btn" type="button" data-act="cvt-copy">复制文案</button>
+            <button class="btn" type="button" data-act="cvt-todo">用这些字段建待办</button>
+            <span class="muted" id="cvtStat"></span>
+          </div>
+          <div class="fields" id="cvtFields" hidden></div>
+          <div class="leftover" id="cvtLeft" hidden></div>
+          <details class="help">
+            <summary>为什么不接大模型？</summary>
+            <p>静态页放 API key 会泄露、得把班级通知传到外部，而且模型「润色」反而可能吞掉细节。规则版能给你逐句对照和字段表，可验证。真遇到嚼不动的长句再说接 API 的事。</p>
+          </details>
+        </article>
+      </div>
+
+      <!-- 日历 / 通知 -->
+      <div class="subview" data-sub="todos:remind" hidden>
+        <div class="split split-even">
+          <article class="card">
+            <h2 class="card-title">导进 iPhone 日历（主渠道）</h2>
+            <p class="hint">系统级提醒，关掉网页也照响。中文与 +08:00 时区已处理，班长通知带两个提前提醒。</p>
+            <div class="btn-row">
+              <button class="btn btn-primary" type="button" data-act="ics">导出 .ics</button>
+              <button class="btn" type="button" data-act="ics-copy">复制 .ics 原文</button>
+            </div>
+            <label class="switch-row">
+              <input type="checkbox" id="dailyReviewIcs">
+              <span><b>每天 21:00 查待办</b><small>写进 .ics 的每日重复事件；重复导入不叠加（固定 UID）</small></span>
+            </label>
+            <button class="btn btn-ghost" type="button" data-act="ics-review">只导出这个每日提醒</button>
+            <details class="help">
+              <summary>iOS 怎么导入？</summary>
+              <p>把 baisir.ics 存到「文件」→ 用日历打开，或长按文件选「共享 → 日历」。Safari 直接下载不成功时，用「复制 .ics 原文」粘到备忘录 / 文件里存成 .ics。</p>
+            </details>
+            <details class="help">
+              <summary>查看 .ics 内容</summary>
+              <textarea class="ics-pre" id="icsPre" readonly rows="8" aria-label=".ics 内容"></textarea>
+              <p class="hint">这里把换行显示成 LF，仅供查看；要导入请用上面的按钮（保留 CRLF）。</p>
+            </details>
+          </article>
+          <article class="card">
+            <h2 class="card-title">浏览器通知（辅渠道）</h2>
+            <p class="hint"><b>只在页面开着时有效</b> —— 关掉网页就不会弹。重要提醒一定导日历。</p>
+            <div class="btn-row">
+              <button class="btn" type="button" data-act="notif">开启浏览器通知</button>
+            </div>
+            <p class="state-line" id="notifState">—</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== 护肤 ===================== -->
+    <section class="view" data-view="skin" aria-labelledby="hSkin" hidden>
+      <header class="view-head">
+        <div>
+          <h1 id="hSkin">护肤 · 油痘皮执行表</h1>
+          <p class="view-sub" id="skinSub">医学结论一字未改。先压红肿痘，再谈提亮变白。</p>
+        </div>
+      </header>
+      <div class="subtabs" role="tablist" aria-label="护肤分区">
+        <button type="button" role="tab" data-act="sub" data-view-sub="skin" data-v="plan">本周计划</button>
+        <button type="button" role="tab" data-act="sub" data-view-sub="skin" data-v="checkin">8 周打卡</button>
+        <button type="button" role="tab" data-act="sub" data-view-sub="skin" data-v="kit">清单与红线</button>
+      </div>
+
+      <!-- 本周计划 -->
+      <div class="subview" data-sub="skin:plan">
+        <ul class="week-plan" id="weekBody"></ul>
+        <p class="note note-warn"><b>同一晚只挑一样。</b>BPO / 白云山双酸泥膜 / VC / 烟酰胺 / UNO 不叠加。一周最多 1 次去角质类，泥膜算一次。</p>
+
+        <h2 class="sec-title">解冻规则</h2>
+        <div class="qa-grid">
+          <article class="card qa qa-warm">
+            <p class="qa-k">Q1 · 白云山双酸泥膜</p>
+            <h3>现在停，最早第 3 周的周六晚解冻</h3>
+            <p class="verdict verdict-no">现在别用：红肿带脓头 + 刚开始上 BPO，酸类叠上去 = 双重脱皮、泛红、屏障崩。</p>
+            <label class="switch-row">
+              <input type="checkbox" id="maskToggle">
+              <span><b>我已满足解冻条件，开启「周六泥膜日」</b><small>开启后时间轴和周排班的周六换成泥膜，那晚不再显示药膏</small></span>
+            </label>
+            <details class="help">
+              <summary>解冻条件与用法</summary>
+              <ul>
+                <li><b>解冻条件（两个都要满足）</b>：连续 2 周没有新发红肿痘，且 BPO 点涂后不再脱屑、泛红、刺痛。</li>
+                <li><b>放在周六晚</b>，因为第二天没早八、时间充裕，方便观察反应。</li>
+                <li><b>那一晚不涂 BPO</b>：洁面 → 泥膜（只 T 区 / 闭口处，避开脓头和破口）→ 只用保湿。和 BPO 至少隔 24 小时。</li>
+                <li><b>一周最多 1 次</b>，别回到以前「每周 2 次」。刺痛或第二天泛红，就再冻结 2 周。</li>
+              </ul>
+            </details>
+          </article>
+          <article class="card qa qa-cool">
+            <p class="qa-k">Q2 · Timeless 20% VC+VE+阿魏酸</p>
+            <h3>先看颜色，再看时机；现在先别上脸</h3>
+            <p class="verdict verdict-cond">拧开看：<b>无色 / 很淡的稻草黄 = 还能用</b>；<b>橙黄、棕黄、有哈喇味 = 已氧化，直接扔</b>，别心疼。</p>
+            <label class="switch-row">
+              <input type="checkbox" id="vcToggle">
+              <span><b>我已满足解冻条件，在早间流程显示 VC</b><small>早间多一条「VC（每周 2 次，非每天）」。变黄了就别开，直接扔</small></span>
+            </label>
+            <details class="help">
+              <summary>为什么现在别用 · 怎么恢复</summary>
+              <ul>
+                <li><b>即便没变色，这阶段也别用</b>，不是因为过期：20% 原型 VC 本身 pH 低，正在建立 BPO 耐受的油痘皮叠上去容易泛红脱屑；而且 <b>BPO 是强氧化剂，会把 VC 氧化掉</b>，两个一起用等于白涂。</li>
+                <li><b>解冻条件</b>：连续 2 周无新发红肿、BPO 已耐受（或减到每周 2–3 次维持）、洗脸不再刺痛。</li>
+                <li><b>恢复后放早上</b>：清水 / 洁面后 3–4 滴，等 1–2 分钟 → 保湿 → 防晒。VC 白天配合防晒才有意义；<b>晚上照常 BPO，两者错开时段，永不同一步</b>。</li>
+                <li><b>每周 2 次起步</b>，别天天。9 月开封到现在 2 个月，开封后 3 个月是常规窗口 —— 只剩一个月，用不完就算了，别为了不浪费硬糊脸。</li>
+              </ul>
+            </details>
+          </article>
+        </div>
+        <p class="note"><b>解冻顺序：</b>第 1–2 周只有洁面 + BPO + 保湿 + 防晒；第 3–4 周条件够了才逐步放回泥膜、VC；<b>烟酰胺排最后</b>，等 8 周复盘、痘稳了再加。一次只解冻一样，出问题才知道是谁的锅。</p>
+      </div>
+
+      <!-- 8 周打卡 -->
+      <div class="subview" data-sub="skin:checkin" hidden>
+        <article class="card checkin">
+          <div class="checkin-top">
+            <div>
+              <h2 class="card-title">每日完成格</h2>
+              <p class="hint">当天按时间轴做到就点一下，漏了空着，别补涂加倍。</p>
+            </div>
+            <p class="checkin-stat"><b id="totalDone">0</b> / 56 天<span id="totalPct">0%</span></p>
+          </div>
+          <div class="grid8" id="grid8" role="grid" aria-label="8 周打卡格"></div>
+          <div class="legend">
+            <span><i class="lg-on"></i>已完成</span>
+            <span><i class="lg-off"></i>未打卡</span>
+            <span><i class="lg-today"></i>今天</span>
+            <span><i class="lg-future"></i>未来</span>
+          </div>
+          <p class="hint">开始日在「设置 → 护肤计划」里改。</p>
+        </article>
+        <p class="note"><b>8 周后回来复盘：</b>痘稳了再加烟酰胺（提亮）或阿达帕林（闭口粉刺），两者错开、不同时上。痘印是炎症后色沉，靠严格防晒和时间淡，别指望胶原膜。肤色上限 = 上臂内侧没晒过的颜色，护肤只能拉回基线。</p>
+        <p class="fine">用药提示：2.5% 过氧苯甲酰为外用非处方/药店可及药品，首次使用建议先问药师；阿达帕林属处方药，需医生评估。本页是日常执行安排，不替代皮肤科诊断。</p>
+      </div>
+
+      <!-- 清单与红线 -->
+      <div class="subview" data-sub="skin:kit" hidden>
+        <h2 class="sec-title">只买这三件</h2>
+        <div class="buy" id="buyGrid"></div>
+
+        <h2 class="sec-title">手上的东西怎么处置</h2>
+        <p class="hint legend-inline"><span><i class="dot ok"></i>照常用</span><span><i class="dot mid"></i>降频 / 换地方用</span><span><i class="dot no"></i>现在停</span><span><i class="dot hold"></i>不用买</span></p>
+        <div class="stock" id="stockGrid"></div>
+
+        <h2 class="sec-title">六条红线</h2>
+        <ol class="rules">
+          <li>不用热水、不折腾水温；<b>冷水可用</b>，觉得刺就晚上兑点微温（30–35℃）。</li>
+          <li>同一晚只挑一样：BPO / 双酸泥膜 / VC / 烟酰胺 / UNO <b>不叠加</b>。</li>
+          <li><b>停磨砂、停打圈揉搓、别挤痘</b>，尤其鼻子和嘴周围三角区。</li>
+          <li>用 BPO 的头 2 周，<b>两支 UNO 全停</b>（连每周一次 T 区那次也停）。</li>
+          <li>出现紧绷、泛红、脱屑 → <b>全停活性物</b>，只留洁面 + 保湿 + 防晒。</li>
+          <li>又硬又痛的结节囊肿 / 数量明显变多 / 开始留坑 → 直接去 <b>湘雅三医院皮肤科</b>（河西，电动车能到）。</li>
+        </ol>
+        <p class="note"><b>两个免费动作：</b>枕巾每周换 1–2 次；头盔内衬勤洗，骑到后把额头、下巴的汗按干。出汗 + 摩擦最容易闷痘，长沙这天气尤其。<b>头盔照戴</b>，交警会查。</p>
+      </div>
+    </section>
+
+    <!-- ===================== 设置 ===================== -->
+    <section class="view" data-view="settings" aria-labelledby="hSet" hidden>
+      <header class="view-head">
+        <div>
+          <h1 id="hSet">设置与数据</h1>
+          <p class="view-sub">数据各设备独立，靠 JSON 手工同步。</p>
+        </div>
+      </header>
+
+      <div class="set-grid">
+        <article class="card set-card">
+          <h2 class="card-title">护肤计划</h2>
+          <label class="field">
+            <span>计划开始日（8 周打卡从这天排）</span>
+            <input type="date" id="startDate">
+          </label>
+          <div class="field">
+            <span id="uviLabel">紫外线指数</span>
+            <div class="seg seg-wide" role="group" aria-labelledby="uviLabel" id="uviSeg">
+              <button type="button" data-act="uvi" data-uvi="auto" aria-pressed="true">自动</button>
+              <button type="button" data-act="uvi" data-uvi="low" aria-pressed="false">UVI &lt; 3 · 省</button>
+              <button type="button" data-act="uvi" data-uvi="high" aria-pressed="false">UVI ≥ 3 · 涂</button>
+            </div>
+            <small class="hint">天气接口连不上时，手动切一下防晒建议。</small>
+          </div>
+        </article>
+
+        <article class="card set-card">
+          <h2 class="card-title">学期与教学周</h2>
+          <div class="field-2">
+            <label class="field"><span>第 1 周周一</span><input type="date" id="semesterStart"></label>
+            <label class="field"><span>总周数</span><input type="number" id="totalWeeks" min="1" max="60" step="1" inputmode="numeric"></label>
+          </div>
+          <p class="state-line" id="termWeekInfo">—</p>
+          <p class="hint">按教学周过滤单双周，和护肤 8 周的开始日互不相干。学期结束后课表自动隐藏，不再误报早八。</p>
+        </article>
+
+        <article class="card set-card">
+          <h2 class="card-title">4 位口令</h2>
+          <p class="state-line" id="pinState">—</p>
+          <div class="field-inline">
+            <label class="field"><span>新口令（4 位数字）</span><input id="pinSet" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autocomplete="new-password"></label>
+            <button class="btn btn-primary" type="button" data-act="pin-save">设置 / 修改</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn" type="button" data-act="lock-now">立即锁定</button>
+            <button class="btn btn-danger-ghost" type="button" data-act="pin-off">关闭口令</button>
+          </div>
+          <details class="help">
+            <summary>这个锁能防什么？</summary>
+            <p>公网链接会暴露课表和待办，加个锁防误入。解锁状态放在当前标签页，刷新不用重输，关掉标签页就锁上。<b>这是防误入，不是加密</b>：纯前端可被绕过，别拿它保护真正敏感的东西。</p>
+          </details>
+        </article>
+
+        <article class="card set-card">
+          <h2 class="card-title">跨设备手工同步</h2>
+          <p class="hint">导出 JSON 备份，在另一台设备导入即可完整还原（打卡、课表、待办、设置）。导入会<b>整体覆盖</b>本设备现有数据，先导出一份再操作。v2.2 的备份可以直接导入。</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" type="button" data-act="json-export">导出 JSON 备份</button>
+            <button class="btn" type="button" data-act="json-import">选择文件导入</button>
+          </div>
+          <input type="file" id="jsonFile" accept="application/json,.json" hidden>
+          <details class="help">
+            <summary>旧版《护肤打卡》页的数据</summary>
+            <p>旧页的打勾记录会在首次打开时自动迁移过来，旧页本身不动、继续能用。需要时可以手动再导一次（会覆盖本页打勾和开关）。</p>
+            <button class="btn btn-ghost" type="button" data-act="remigrate">重新从旧页导入打勾</button>
+          </details>
+        </article>
+
+        <article class="card set-card set-wide">
+          <h2 class="card-title">隐私与使用边界</h2>
+          <ul class="plain-list">
+            <li>本页无后端、无账号、不上传任何数据；天气是浏览器直接向 Open-Meteo 请求。</li>
+            <li>打卡、课表、待办只存在这台设备的浏览器里：<b>别用无痕模式、别清缓存</b>，换设备靠上面的 JSON 导出 / 导入。</li>
+            <li>链接别外传。浏览器通知只在页面开着时弹，重要提醒请导 .ics 到系统日历。</li>
+            <li>所有时间按北京时间（Asia/Shanghai），24 小时制。</li>
+          </ul>
+        </article>
+
+        <article class="card set-card set-wide">
+          <h2 class="card-title">装到主屏幕</h2>
+          <p class="hint">iPhone：Safari 打开 → 分享 → 添加到主屏幕。安卓 / 电脑 Chrome：地址栏右侧「安装」。装好后像 App 一样全屏打开，没网时也能看课表和缓存的天气。</p>
+        </article>
+      </div>
+
+      <footer class="foot">
+        白sir 的个人助手 · v3.0 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
+        数据仅存本机浏览器 · 天气数据 Open-Meteo (CC BY 4.0)
+      </footer>
+    </section>
+  </main>
+
+  <!-- 课程编辑面板 -->
+  <div class="sheet" id="ttSheet" hidden>
+    <div class="sheet-backdrop" data-act="tt-close"></div>
+    <form class="sheet-panel" id="ttForm" role="dialog" aria-modal="true" aria-labelledby="ttSheetTitle" autocomplete="off">
+      <div class="sheet-head">
+        <h2 id="ttSheetTitle">添加课程</h2>
+        <button class="btn btn-icon" type="button" data-act="tt-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <label class="field"><span>课程名</span><input id="ttName" placeholder="高等数学A（一）" required></label>
+        <div class="field">
+          <span id="ttDayLabel">星期</span>
+          <div class="seg seg-days" role="radiogroup" aria-labelledby="ttDayLabel" id="ttDays"></div>
+        </div>
+        <div class="field-2">
+          <label class="field"><span>开始</span><input class="t24" id="ttStart" inputmode="numeric" placeholder="08:00" maxlength="5" required></label>
+          <label class="field"><span>结束</span><input class="t24" id="ttEnd" inputmode="numeric" placeholder="09:40" maxlength="5" required></label>
+        </div>
+        <div class="quick" aria-label="常用节次">
+          <span class="muted">常用节次</span>
+          <button type="button" data-act="tt-slot" data-s="08:00" data-e="09:40">1-2 节 08:00</button>
+          <button type="button" data-act="tt-slot" data-s="10:00" data-e="11:40">3-4 节 10:00</button>
+          <button type="button" data-act="tt-slot" data-s="14:00" data-e="15:40">5-6 节 14:00</button>
+          <button type="button" data-act="tt-slot" data-s="16:00" data-e="17:40">7-8 节 16:00</button>
+          <button type="button" data-act="tt-slot" data-s="19:00" data-e="20:40">晚上 19:00</button>
+        </div>
+        <label class="field"><span>地点</span><input id="ttPlace" placeholder="潇湘校区-B座212"></label>
+        <div class="field-2">
+          <label class="field"><span>标签</span><select id="ttTag"><option value="">普通</option><option value="体育">体育 / 户外</option></select></label>
+          <label class="field"><span>周次（不写 = 每周）</span><input id="ttWeeks" placeholder="9-20周 / 单周 11-17 / 1,3,5-8"></label>
+        </div>
+        <div class="quick">
+          <span class="muted">快速填</span>
+          <button type="button" data-act="tt-wk" data-v="">每周</button>
+          <button type="button" data-act="tt-wk" data-v="单周 ">单周</button>
+          <button type="button" data-act="tt-wk" data-v="双周 ">双周</button>
+        </div>
+        <p class="hint" id="ttWeeksHint">—</p>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-danger-ghost" type="button" data-act="tt-del" id="ttDelBtn" hidden>删除这节</button>
+        <span class="spacer"></span>
+        <button class="btn" type="button" data-act="tt-close">取消</button>
+        <button class="btn btn-primary" type="submit" id="ttSaveBtn">添加</button>
+      </div>
+    </form>
+  </div>
+</div>
+</template>
+
+<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.0.0"></script>
+</body>
+</html>
