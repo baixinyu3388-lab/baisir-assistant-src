@@ -1,11 +1,11 @@
-/* 白sir 的个人助手 · v3.1 (2026-11-12)
+/* 白sir 的个人助手 · v3.2 (2026-11-12)
  * 纯静态、无构建、无后端。数据只在本机 localStorage（key: baiAssistant_v2，与 v2.2 完全兼容）。
  */
 (function(){
 "use strict";
 
 /* ================= 常量 ================= */
-var VERSION = "3.1.0";
+var VERSION = "3.2.0";
 var KEY = "baiAssistant_v2";          // 不要改：v2.2 的数据就在这里
 var V1KEY = "skinReset_v1";           // 更早的《护肤打卡》页
 var UNLOCK_KEY = "baiUnlocked";       // sessionStorage：当前标签页已解锁
@@ -117,6 +117,7 @@ function defaults(){
     timetableIsSample:false,
     todos:[],
     noticeLog:[],
+    classRoster:[],          // v3.2 本班名单：只存本机
     weatherCache:{data:null,fetchedAt:null},
     settings:{notifEnabled:false,lastIcsExport:null,semesterStart:"2026-09-07",totalWeeks:20,dailyReviewIcs:true}
   };
@@ -140,11 +141,18 @@ function load(){
   for(var i=0;i<7;i++) if(!Array.isArray(s.timetable[i])) s.timetable[i] = [];
   if(!Array.isArray(s.todos)) s.todos = [];
   if(!Array.isArray(s.noticeLog)) s.noticeLog = [];
+  s.classRoster = cleanRoster(s.classRoster);
   if(!s.meta.migratedFrom){
     var v1 = readV1();
     if(v1 && applyV1(s,v1)) s.meta.migratedFrom = "skinReset_v1";
   }
   return s;
+}
+function cleanRoster(r){
+  if(!Array.isArray(r)) return [];
+  var out = [], seen = {};
+  r.forEach(function(n){ n = String(n == null ? "" : n).trim(); if(n && !seen[n]){ seen[n] = 1; out.push(n); } });
+  return out;
 }
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -733,7 +741,8 @@ function openSheet(id, focusEl){
 function closeSheet(id){
   var el = $(id); if(!el || el.hidden) return;
   el.classList.remove("in");
-  document.documentElement.classList.remove("sheet-open");
+  var others = qsa(".sheet").some(function(x){ return x !== el && !x.hidden; });
+  if(!others) document.documentElement.classList.remove("sheet-open");
   setTimeout(function(){ el.hidden = true; }, 220);
   if(lastFocus && lastFocus.focus) try { lastFocus.focus(); } catch(e){}
 }
@@ -1005,6 +1014,83 @@ function composeNotice(f){
 }
 /* NT-PARSER-END */
 
+/* ================= 收齐统计：纯函数（不碰 DOM；node 可单独测） ================= */
+/* COL-PURE-START */
+var COL_NEG_RE = /没交|未交|还没|没有交|没提交|未提交|没上交|未上交|没完成|未完成|忘了交|忘交|交不了|没法交|不交|缺交|未收到|没收到/;
+/* 名单粘贴：一行一个，也认逗号 / 顿号 / 分号 / 空白；去掉序号、学号、@，去重保序 */
+function rosterParse(text){
+  var parts = String(text || "").replace(/\r/g, "").split(/[\n,，、;；|\t ]+|\u3000+/), out = [], seen = {};
+  for(var i=0;i<parts.length;i++){
+    var s = parts[i].replace(/^[@＠]+/, "").replace(/^[\(（\[【]?\d+[\)）\]】.．:：、-]*/, "").replace(/\d{5,}/g, "")
+      .replace(/[：:。.!！?？"“”'‘’（）()【】\[\]<>《》]+$/g, "").replace(/^[：:。.!！?？"“”'‘’（）()【】\[\]<>《》]+/g, "").trim();
+    if(!s || /^\d+$/.test(s) || s.length > 20) continue;
+    if(seen[s]) continue;
+    seen[s] = 1; out.push(s);
+  }
+  return out;
+}
+function rosterMerge(base, add){
+  var out = (base || []).slice(), seen = {};
+  out.forEach(function(n){ seen[n] = 1; });
+  (add || []).forEach(function(n){ if(n && !seen[n]){ seen[n] = 1; out.push(n); } });
+  return out;
+}
+/* 从群聊天记录里找名单上的名字：
+ * - 一行里出现名字就算「已交」（兼容 @张三、张三已交、已交 张三、张三：[图片]）
+ * - 长名字优先（「张三丰」不会误勾「张三」）
+ * - 一行里有「没交 / 还没 / 未交」等字样 → 这行的名字都不勾，单独报出来
+ * - 单字名不自动匹配（太容易误中）
+ * 返回 {hit:[], neg:[], already:[], unknownLines:n, skipped:[]}；只告诉调用方该勾谁，绝不返回「取消勾选」 */
+function chatMatch(text, roster, checked){
+  checked = checked || {};
+  var names = (roster || []).filter(function(n){ return n && n.length >= 2; }).slice().sort(function(a,b){ return b.length - a.length; });
+  var skipped = (roster || []).filter(function(n){ return n && n.length < 2; });
+  var lines = String(text || "").replace(/\r/g, "").split(/\n+/);
+  var hit = [], neg = [], already = [], seenHit = {}, seenNeg = {}, unknown = 0;
+  for(var li=0; li<lines.length; li++){
+    var line = lines[li].trim(); if(!line) continue;
+    var mask = line, found = [];
+    for(var k=0;k<names.length;k++){
+      var n = names[k], at = mask.indexOf(n);
+      if(at < 0) continue;
+      found.push(n);
+      while(at >= 0){ mask = mask.slice(0, at) + new Array(n.length + 1).join("\u0000") + mask.slice(at + n.length); at = mask.indexOf(n); }
+    }
+    if(!found.length){ if(/[\u4e00-\u9fa5A-Za-z]/.test(line)) unknown++; continue; }
+    var isNeg = COL_NEG_RE.test(mask.replace(/\u0000+/g, " "));
+    found.forEach(function(n){
+      if(isNeg){ if(!seenNeg[n] && !seenHit[n]){ seenNeg[n] = 1; } return; }
+      if(seenHit[n]) return;
+      seenHit[n] = 1;
+      if(checked[n]) already.push(n); else hit.push(n);
+    });
+  }
+  for(var x in seenNeg) if(!seenHit[x]) neg.push(x);
+  return {hit:hit, neg:neg, already:already, unknownLines:unknown, skipped:skipped};
+}
+/* 已交记录里不在当前名单的姓名（改名 / 删人后保留在数据里，不显示在表上） */
+function colOrphans(checked, roster){
+  var inR = {}, out = [];
+  (roster || []).forEach(function(n){ inR[n] = 1; });
+  for(var n in (checked || {})) if(checked[n] && !inR[n]) out.push(n);
+  return out;
+}
+function colStats(checked, roster){
+  var done = 0;
+  (roster || []).forEach(function(n){ if(checked && checked[n]) done++; });
+  return {done:done, total:(roster || []).length, left:(roster || []).length - done};
+}
+/* 「还没交」催办文案：直接贴进群。ctx = {what, due:"YYYY-MM-DDTHH:MM", where, mode} */
+function colUnpaidText(names, ctx, dueText){
+  ctx = ctx || {};
+  var who = names.join("、");
+  var head = "还没交" + (ctx.what ? "「" + ctx.what + "」" : "") + "的同学：" + who + "（共 " + names.length + " 人）";
+  var to = ctx.mode === "monitor" ? "交给我" : (ctx.where ? "交到" + ctx.where : "按要求提交");
+  var when = dueText ? "请于" + dueText + "前" + to : "请尽快" + to;
+  return head + "，" + when + "，谢谢～";
+}
+/* COL-PURE-END */
+
 /* ================= 转发通知：界面（v3.1） ================= */
 var nt = {sid:"", lastRaw:"", outDirty:false, colTouched:false, timer:null, added:false};
 var NT_FIELDS = ["ntWhat","ntWho","ntMode","ntWhere","ntStuDate","ntStuTime","ntColDate","ntColTime","ntStrict","ntExtra"];
@@ -1076,8 +1162,10 @@ function ntLogUpsert(){
   var f = ntReadFields(), out = $("ntOut").value.trim();
   if(!out) return;
   if(!nt.sid) nt.sid = uid();
+  var prev = ntLogById(nt.sid);
   var entry = {id:nt.sid, at:new Date().toISOString(), title:f.what || f.raw.slice(0,18) || "通知",
-    due:f.due, broadcast:out, raw:f.raw};
+    due:f.due, broadcast:out, raw:f.raw, what:f.what, where:f.where, mode:f.mode, stuDue:f.due ? localISO(f.due) : ""};
+  if(prev && isObj(prev.collectChecked)) entry.collectChecked = prev.collectChecked;   // 收齐勾选跟着这条记录走
   state.noticeLog = (state.noticeLog || []).filter(function(x){ return x && x.id !== nt.sid; });
   state.noticeLog.unshift(entry);
   if(state.noticeLog.length > 30) state.noticeLog.length = 30;
@@ -1109,6 +1197,7 @@ function ntAddTodos(){
   if(nt.added && !window.confirm("这条通知已经加过待办了，再加一次？")) return;
   var name = f.what || (f.raw.slice(0,16) + (f.raw.length > 16 ? "…" : "")) || "班长通知";
   var base = {type:"notice", audience:f.who || "全班", note:f.raw, broadcast:out, what:f.what, noticeId:nt.sid,
+    where:f.where, mode:f.mode, stuDue:f.due ? localISO(f.due) : "",
     done:false, createdAt:new Date().toISOString()};
   var made = [];
   if(wantPost){
@@ -1117,13 +1206,13 @@ function ntAddTodos(){
     made.push("发群 " + dtShort(new Date(localISO(pd)).getTime()));
   }
   if(wantCol){
-    state.todos.push(fill({id:uid(), role:"collect", title:"收齐：" + name, due:localISO(f.collect), leadMin:1440}, base));
+    state.todos.push(fill({id:uid(), role:"collect", title:"收齐：" + name, due:localISO(f.collect), leadMin:1440, collectChecked:{}}, base));
     made.push("收齐 " + dtShort(new Date(localISO(f.collect)).getTime()));
   }
   nt.added = true;
   ntLogUpsert(); save(); renderTodos(); renderSoon(); renderReminders();
   var guess = wantCol && !$("chk-collect").hidden;
-  toast("已加入待办：" + made.join("、") + (guess ? "。收齐时间是推测的，请先核对时间" : ""));
+  toast("已加入待办：" + made.join("、") + (guess ? "。收齐时间是推测的，请先核对时间" : (wantCol && !(state.classRoster || []).length ? "。导入本班名单后可逐人勾已交" : "")));
 }
 function ntClear(){
   $("ntRaw").value = ""; nt.lastRaw = ""; nt.outDirty = false; nt.parsed = null;
@@ -1150,14 +1239,33 @@ function renderNoticeLog(){
   var L = (state.noticeLog || []).filter(function(x){ return x && x.broadcast; });
   if(!L.length){ box.innerHTML = '<li class="empty">还没有转发记录。复制公告或加入待办后会出现在这里。</li>'; return; }
   box.innerHTML = L.map(function(e){
-    var at = new Date(e.at).getTime();
+    var at = new Date(e.at).getTime(), ct = ntCollectTodoOf(e.id);
+    var colBtn = ct ? '<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="todo" data-id="'+esc(ct.id)+'">收齐表 · '+esc(colProgressText(ct))+'</button>'
+      : '<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="log" data-id="'+esc(e.id)+'">收齐表'+(isObj(e.collectChecked) && Object.keys(e.collectChecked).length ? ' · '+esc(colProgressText(e)) : '')+'</button>';
     return '<li class="nt-log-item"><div class="nt-log-main"><b>'+esc(e.title)+'</b>'+
       '<small>'+(e.due ? '截止 '+esc(dateCN(e.due))+' '+esc(String(e.due).slice(11,16)) : '截止未填')+(isFinite(at) ? ' · 转发于 '+dtShort(at) : '')+'</small></div>'+
-      '<div class="nt-log-act"><button type="button" class="btn btn-sm" data-act="nt-log-copy" data-id="'+esc(e.id)+'">复制公告</button>'+
+      '<div class="nt-log-act">'+colBtn+'<button type="button" class="btn btn-sm" data-act="nt-log-copy" data-id="'+esc(e.id)+'">复制公告</button>'+
       '<button type="button" class="btn btn-sm" data-act="nt-log-load" data-id="'+esc(e.id)+'">载入再改</button></div></li>';
   }).join("");
 }
-/* 今日页入口：有没收齐 / 没发群的通知就显示最近一条，否则一个「转发通知」按钮 */
+/* 今日页入口：有没收齐 / 没发群的通知就显示最近一条（收齐的带「已交 x/y」），否则一个「转发通知」按钮 */
+function ntCollectTodoOf(noticeId){
+  if(!noticeId) return null;
+  var c = state.todos.filter(function(t){ return isCollectTodo(t) && t.noticeId === noticeId; });
+  c.sort(function(a,b){ return (a.done - b.done) || (new Date(a.due) - new Date(b.due)); });
+  return c[0] || null;
+}
+function ntEntryRow(t, extra){
+  var over = new Date(t.due).getTime() < Date.now();
+  var when = (over ? '<em class="over">已过期</em> · ' : '截止 ') + esc(dateCN(t.due)) + ' ' + esc(timeCN(t.due));
+  if(isCollectTodo(t)){
+    var r = state.classRoster || [], s = colStats(colChecked(t), r);
+    var prog = r.length ? '<em class="nt-prog' + (s.left ? '' : ' ok') + '">' + esc(colProgressText(t)) + '</em>' : '<em class="nt-prog none">还没导入名单</em>';
+    return '<button type="button" class="nt-entry-btn has" data-act="col-open" data-kind="todo" data-id="' + esc(t.id) + '"><b>' + esc(t.title) + '</b>' +
+      '<span>' + prog + ' · ' + when + extra + '</span><i aria-hidden="true">›</i></button>';
+  }
+  return '<a class="nt-entry-btn has" href="#/todos/list"><b>' + esc(t.title) + '</b><span>' + when + extra + '</span><i aria-hidden="true">›</i></a>';
+}
 function renderNoticeEntry(){
   var box = $("ntEntry"); if(!box) return;
   var open = state.todos.filter(function(t){ return t.type === "notice" && !t.done && isFinite(new Date(t.due).getTime()); })
@@ -1166,10 +1274,186 @@ function renderNoticeEntry(){
     box.innerHTML = '<button type="button" class="nt-entry-btn" data-act="nt-open"><b>转发通知</b><span>粘贴辅导员的消息，生成群公告</span><i aria-hidden="true">›</i></button>';
     return;
   }
-  var t = open[0], over = new Date(t.due).getTime() < Date.now();
-  box.innerHTML = '<a class="nt-entry-btn has" href="#/todos/list"><b>'+esc(t.title)+'</b>'+
-    '<span>'+(over ? '<em class="over">已过期</em> · ' : '截止 ')+esc(dateCN(t.due))+' '+esc(timeCN(t.due))+(open.length > 1 ? ' · 还有 '+(open.length-1)+' 条' : '')+'</span><i aria-hidden="true">›</i></a>'+
+  var first = open[0], col1 = null;
+  for(var i=0;i<open.length;i++){ if(isCollectTodo(open[i])){ col1 = open[i]; break; } }
+  var rows = [first];
+  if(col1 && col1 !== first) rows.push(col1);
+  var more = open.length - rows.length;
+  box.innerHTML = '<div class="nt-entry-rows">' + rows.map(function(t, k){
+    return ntEntryRow(t, (k === rows.length - 1 && more > 0) ? ' · 还有 ' + more + ' 条' : '');
+  }).join("") + '</div>' +
     '<button type="button" class="btn btn-sm nt-entry-new" data-act="nt-open">+ 转发通知</button>';
+}
+
+/* ================= 收齐统计：界面（v3.2，名单只存本机） ================= */
+var col = {kind:"", id:"", filter:"all", lastMsg:""};
+function isCollectTodo(t){ return !!t && (t.role === "collect" || /^收齐[：:]/.test(String(t.title || ""))); }
+function colTarget(kind, id){
+  if(kind === "log") return ntLogById(id);
+  var t = todoById(id); return t;
+}
+function colChecked(obj){ if(!obj) return {}; if(!isObj(obj.collectChecked)) obj.collectChecked = {}; return obj.collectChecked; }
+function colCtx(obj, kind){
+  if(!obj) return {};
+  var due = obj.stuDue || obj.due || "";
+  var what = obj.what || String(obj.title || "").replace(/^(?:收齐|发群)[：:]\s*/, "");
+  return {what:what, due:due ? String(due).slice(0,16) : "", where:obj.where || "", mode:obj.mode || (kind === "todo" && obj.type === "notice" ? "monitor" : "")};
+}
+function colDueText(ctx){ return ctx.due && /T\d\d:\d\d/.test(ctx.due) ? ntDueText(ctx.due, true, "") : ""; }
+function colProgressText(obj){
+  var r = state.classRoster || [];
+  if(!r.length) return "还没导入名单";
+  var s = colStats(colChecked(obj), r);
+  return s.left ? "已交 " + s.done + "/" + s.total : "已收齐 " + s.total + "/" + s.total;
+}
+function colOpen(kind, id){
+  var obj = colTarget(kind, id);
+  if(!obj){ toast("这条记录找不到了"); return; }
+  col.kind = kind; col.id = id; col.filter = "all"; col.lastMsg = "";
+  if($("colChat")) $("colChat").value = "";
+  renderColSheet(); openSheet("colSheet");
+}
+function renderColSheet(){
+  var box = $("colBody"); if(!box || !col.id) return;
+  var obj = colTarget(col.kind, col.id);
+  if(!obj){ closeSheet("colSheet"); return; }
+  var ctx = colCtx(obj, col.kind), dueTxt = colDueText(ctx);
+  $("colTitle").textContent = "收齐表";
+  $("colSub").textContent = (ctx.what || obj.title || "通知") + (dueTxt ? " · 同学截止 " + dueTxt : "");
+  var roster = state.classRoster || [], ck = colChecked(obj);
+  if(!roster.length){
+    $("colMain").hidden = true; $("colEmpty").hidden = false; $("colClearBtn").hidden = true;
+    return;
+  }
+  $("colMain").hidden = false; $("colEmpty").hidden = true; $("colClearBtn").hidden = false;
+  var s = colStats(ck, roster);
+  $("colStat").innerHTML = '<b>' + s.done + '</b><span>/ ' + s.total + ' 已交</span>' +
+    (s.left ? '<em>未交 ' + s.left + ' 人</em>' : '<em class="ok">全部收齐</em>');
+  var bar = $("colBar"); bar.style.width = (s.total ? Math.round(s.done / s.total * 100) : 0) + "%";
+  setPressed(qsa("#colFilter button"), function(b){ return b.getAttribute("data-v") === col.filter; });
+  var list = roster.filter(function(n){ return col.filter === "all" || (col.filter === "done" ? !!ck[n] : !ck[n]); });
+  $("colList").innerHTML = list.length ? list.map(function(n){
+    var on = !!ck[n];
+    return '<li><button type="button" class="col-name' + (on ? ' on' : '') + '" data-act="col-tick" data-name="' + esc(n) + '" aria-pressed="' + on + '">' +
+      '<i aria-hidden="true">' + TICK_SVG + '</i><span>' + esc(n) + '</span></button></li>';
+  }).join("") : '<li class="empty">' + (col.filter === "left" ? "没有未交的人了。" : "还没人勾上。") + '</li>';
+  var orph = colOrphans(ck, roster);
+  var on = $("colOrphan");
+  if(orph.length){
+    on.hidden = false;
+    $("colOrphanTxt").textContent = "有 " + orph.length + " 条已交记录的名字不在当前名单里（" + orph.slice(0,6).join("、") + (orph.length > 6 ? "…" : "") + "），已保留没删；名单里加回这些名字就会恢复。";
+  } else on.hidden = true;
+  $("colMsg").textContent = col.lastMsg; $("colMsg").hidden = !col.lastMsg;
+}
+function colToggle(name){
+  var obj = colTarget(col.kind, col.id); if(!obj) return;
+  var ck = colChecked(obj);
+  if(ck[name]) delete ck[name]; else ck[name] = true;
+  save(); renderColSheet(); colRefreshOutside();
+  if(navigator.vibrate) try { navigator.vibrate(6); } catch(_){}
+}
+function colRefreshOutside(){ renderTodos(); renderNoticeEntry(); renderNoticeLog(); }
+function colCopyLeft(){
+  var obj = colTarget(col.kind, col.id); if(!obj) return;
+  var roster = state.classRoster || [], ck = colChecked(obj);
+  if(!roster.length){ toast("先导入名单"); return; }
+  var left = roster.filter(function(n){ return !ck[n]; });
+  if(!left.length){ toast("全员已交，没有要催的"); return; }
+  var ctx = colCtx(obj, col.kind);
+  copyText(colUnpaidText(left, ctx, colDueText(ctx)), "已复制未交名单（" + left.length + " 人），去群里粘贴");
+}
+function colFromChat(){
+  var obj = colTarget(col.kind, col.id); if(!obj) return;
+  var txt = $("colChat").value;
+  if(!txt.trim()){ toast("先把群里的回复粘贴进来"); $("colChat").focus(); return; }
+  var ck = colChecked(obj), r = chatMatch(txt, state.classRoster || [], ck);
+  r.hit.forEach(function(n){ ck[n] = true; });   // 只加不减：没匹配到的人保持原样
+  var msg = [];
+  msg.push(r.hit.length ? "勾上 " + r.hit.length + " 人：" + r.hit.join("、") : "没有新勾上的人");
+  if(r.already.length) msg.push("本来就勾着 " + r.already.length + " 人");
+  if(r.neg.length) msg.push("像是「还没交」的没勾：" + r.neg.join("、"));
+  if(r.unknownLines) msg.push(r.unknownLines + " 行没认出名单里的名字，需要的话手点");
+  if(r.skipped.length) msg.push("单字名不自动匹配：" + r.skipped.join("、"));
+  col.lastMsg = msg.join("。") + "。";
+  save(); renderColSheet(); colRefreshOutside();
+  toast(r.hit.length ? "从聊天记录勾上 " + r.hit.length + " 人" : "没匹配到新的人，可以手点");
+}
+function colClearOrphans(){
+  var obj = colTarget(col.kind, col.id); if(!obj) return;
+  var ck = colChecked(obj), orph = colOrphans(ck, state.classRoster || []);
+  if(!orph.length) return;
+  if(!window.confirm("删掉这 " + orph.length + " 条不在名单里的已交记录？")) return;
+  orph.forEach(function(n){ delete ck[n]; });
+  save(); renderColSheet(); toast("已清掉");
+}
+function colClearAll(){
+  var obj = colTarget(col.kind, col.id); if(!obj) return;
+  if(!window.confirm("把这条通知的勾选全部清空？（其他通知不受影响）")) return;
+  obj.collectChecked = {}; save(); renderColSheet(); colRefreshOutside(); toast("这条通知的勾选已清空");
+}
+/* 所有带已交记录的对象（待办 + 转发记录），改名时一起迁移 */
+function colAllTargets(){
+  var out = [];
+  (state.todos || []).forEach(function(t){ if(t && isObj(t.collectChecked)) out.push(t); });
+  (state.noticeLog || []).forEach(function(e){ if(e && isObj(e.collectChecked)) out.push(e); });
+  return out;
+}
+
+/* ---------- 本班名单 ---------- */
+function rosterSet(list){ state.classRoster = list; save(); renderRosterAll(); }
+function renderRosterAll(){
+  if(!appReady) return;
+  var n = (state.classRoster || []).length;
+  var t = n ? "已导入 " + n + " 人" : "还没导入";
+  if($("rosterState")) $("rosterState").textContent = "本班名单：" + t + " · 只存在这台设备";
+  if($("ntRosterState")) $("ntRosterState").textContent = n ? "本班名单 " + n + " 人，收齐待办里点「收齐表」逐人勾" : "还没导入本班名单，导入后收齐待办能逐人勾、复制未交";
+  renderRosterSheet(); renderColSheet(); colRefreshOutside();
+}
+function renderRosterSheet(){
+  var box = $("rosterList"); if(!box) return;
+  var r = state.classRoster || [];
+  $("rosterCount").textContent = r.length ? "共 " + r.length + " 人。改名会带着已交记录走；删掉的人，已交记录仍保留在数据里。" : "还没有名单。从班级群或教务系统复制名单粘贴到上面。";
+  box.innerHTML = r.map(function(n, i){
+    return '<li><span class="ro-i">' + (i+1) + '</span><input class="ro-name" data-idx="' + i + '" value="' + esc(n) + '" aria-label="第 ' + (i+1) + ' 人姓名" autocomplete="off">' +
+      '<button type="button" class="btn btn-icon btn-sm ro-del" data-act="ro-del" data-idx="' + i + '" aria-label="删除 ' + esc(n) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>';
+  }).join("");
+  $("rosterClear").hidden = !r.length;
+}
+function rosterOpen(){ $("roPaste").value = ""; renderRosterSheet(); openSheet("rosterSheet", $("roPaste")); }
+function rosterImport(srcId, replace){
+  var el = $(srcId), add = rosterParse(el.value);
+  if(!add.length){ toast("没认出姓名：一行一个，或用逗号、顿号、空格隔开"); el.focus(); return; }
+  var cur = state.classRoster || [];
+  if(replace && cur.length && !window.confirm("用这 " + add.length + " 人替换现在的 " + cur.length + " 人？已交记录会保留，名字对得上的继续显示。")) return;
+  var next = replace ? add : rosterMerge(cur, add), gained = next.length - (replace ? 0 : cur.length);
+  el.value = ""; rosterSet(next);
+  toast(replace ? "名单已替换为 " + next.length + " 人" : (gained ? "导入 " + gained + " 人，现在共 " + next.length + " 人" + (gained < add.length ? "（重复的已去掉）" : "") : "这些人都已经在名单里了"));
+}
+function rosterRename(idx, val){
+  var r = (state.classRoster || []).slice(), old = r[idx];
+  if(old === undefined) return;
+  var nv = String(val || "").replace(/[\s\u3000]+/g, "").replace(/^[@＠]+/, "");
+  if(!nv){ toast("名字不能空；要删人点右边的 ×"); renderRosterSheet(); return; }
+  if(nv.length > 20){ toast("名字太长了（最多 20 字）"); renderRosterSheet(); return; }
+  if(nv === old){ renderRosterSheet(); return; }
+  var dup = r.indexOf(nv) >= 0;
+  colAllTargets().forEach(function(o){ var ck = o.collectChecked; if(ck[old]){ ck[nv] = true; delete ck[old]; } });
+  if(dup) r.splice(idx, 1); else r[idx] = nv;
+  rosterSet(r);
+  toast(dup ? "「" + nv + "」已在名单里，已合并（勾选一并带过去）" : "已改为「" + nv + "」，已交记录跟着改了");
+}
+function rosterDel(idx){
+  var r = (state.classRoster || []).slice(), n = r[idx]; if(n === undefined) return;
+  if(!window.confirm("从名单删掉「" + n + "」？（已交记录保留在数据里，不显示）")) return;
+  r.splice(idx, 1); rosterSet(r); toast("已删掉「" + n + "」");
+}
+function rosterAddOne(){
+  var el = $("roOne"), add = rosterParse(el.value);
+  if(!add.length){ el.focus(); return; }
+  var before = (state.classRoster || []).length, next = rosterMerge(state.classRoster, add);
+  el.value = ""; rosterSet(next);
+  toast(next.length > before ? "已添加" : "已经在名单里了");
+  try { el.focus(); } catch(_){}
 }
 
 /* ================= LS 风险矩阵（同 v2.2） ================= */
@@ -1331,6 +1615,7 @@ function renderTodos(){
         '<details class="mini-details"><summary>管控措施与预测后果 · L='+rk.L+' × S='+rk.S+'</summary>'+
           '<p><b>管控措施：</b>'+esc(rk.meta.ctrl)+'</p><p>'+esc(predictConsequence(t,rk))+'</p></details>'+
         '<div class="todo-act">'+
+          (isCollectTodo(t)?'<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="todo" data-id="'+esc(t.id)+'">收齐表 · '+esc(colProgressText(t))+'</button>':'')+
           '<button type="button" class="btn btn-sm" data-act="td-copy" data-id="'+esc(t.id)+'">复制群公告</button>'+
           (t.type==="notice"?'<button type="button" class="btn btn-sm" data-act="td-copy2" data-id="'+esc(t.id)+'">复制催办</button>':'')+
           '<button type="button" class="btn btn-sm btn-danger-ghost" data-act="td-del" data-id="'+esc(t.id)+'">删除</button>'+
@@ -1601,6 +1886,7 @@ function importJSON(file){
     if(!Array.isArray(state.timetable) || state.timetable.length !== 7) state.timetable = sampleTimetable();
     if(!Array.isArray(state.todos)) state.todos = [];
     if(!Array.isArray(state.noticeLog)) state.noticeLog = [];
+    state.classRoster = cleanRoster(state.classRoster);
     refreshRefs(); save();
     if(state.meta.pinEnabled) ssSet(UNLOCK_KEY,"1");   // 当前标签页保持解锁，不被导入的口令锁在外面
     renderAll(); toast("导入完成，数据已还原");
@@ -1724,6 +2010,30 @@ function onAction(el){
       break;
     case "nt-log-copy": var le = ntLogById(id); if(le) copyText(le.broadcast); break;
     case "nt-log-load": ntLoad(id); break;
+    /* 收齐表 / 本班名单（v3.2） */
+    case "col-open": colOpen(el.getAttribute("data-kind") || "todo", id); break;
+    case "col-close": closeSheet("colSheet"); break;
+    case "col-tick": colToggle(el.getAttribute("data-name")); break;
+    case "col-filter": col.filter = el.getAttribute("data-v"); renderColSheet(); break;
+    case "col-copy": colCopyLeft(); break;
+    case "col-chat": colFromChat(); break;
+    case "col-chat-paste":
+      if(!navigator.clipboard || !navigator.clipboard.readText){ toast("这个浏览器不让读剪贴板，长按输入框粘贴"); $("colChat").focus(); return; }
+      navigator.clipboard.readText().then(function(v){ if(v && v.trim()){ $("colChat").value = v.trim(); colFromChat(); } else toast("剪贴板是空的"); },
+        function(){ toast("没拿到剪贴板，长按输入框粘贴"); $("colChat").focus(); });
+      break;
+    case "col-import": rosterImport("colRosterRaw", false); break;
+    case "col-orphan-clear": colClearOrphans(); break;
+    case "col-clear": colClearAll(); break;
+    case "ro-open": rosterOpen(); break;
+    case "ro-close": closeSheet("rosterSheet"); break;
+    case "ro-add": rosterImport("roPaste", false); break;
+    case "ro-replace": rosterImport("roPaste", true); break;
+    case "ro-one": rosterAddOne(); break;
+    case "ro-del": rosterDel(+el.getAttribute("data-idx")); break;
+    case "ro-clear":
+      if(!window.confirm("清空整份名单？各通知的已交记录会保留在数据里，重新导入同名的人会恢复。")) return;
+      rosterSet([]); toast("名单已清空"); break;
     case "ics": exportICS(); break;
     case "ics-copy":
       if(!state.todos.length){ toast("先加一条待办再复制"); return; }
@@ -1772,6 +2082,7 @@ function bindEvents(){
   });
   root.addEventListener("submit", function(e){
     if(e.target.id === "todoForm"){ e.preventDefault(); addTodo(); }
+    else if(e.target.id === "roOneForm"){ e.preventDefault(); rosterAddOne(); }
     else if(e.target.id === "ttForm"){ e.preventDefault(); saveCourse(); }
   });
   root.addEventListener("input", function(e){
@@ -1807,6 +2118,7 @@ function bindEvents(){
       case "jsonFile": if(el.files && el.files[0]) importJSON(el.files[0]); el.value = ""; break;
       case "ttOnlyFile": if(el.files && el.files[0]) importTimetableOnly(el.files[0]); el.value = ""; break;
     }
+    if(el.classList && el.classList.contains("ro-name")) rosterRename(+el.getAttribute("data-idx"), el.value);
   });
 }
 
@@ -1815,7 +2127,7 @@ function renderAll(){
   if(!appReady) return;
   renderHeader(); renderTonight(); renderTimeline(); renderSoon(); renderWeather();
   renderWeek(); renderBuy(); renderStock(); renderGrid();
-  renderTimetable(); renderTodos(); renderReminders(); renderSettings(); renderNoticeLog();
+  renderTimetable(); renderTodos(); renderReminders(); renderSettings(); renderNoticeLog(); renderRosterAll();
 }
 function onResume(){
   if(!appReady || document.visibilityState === "hidden") return;
@@ -1824,6 +2136,13 @@ function onResume(){
   else { renderHeader(); renderTimeline(); renderSoon(); }
   if(weatherIsStale()) fetchWeather();
 }
+/* 跟随系统深浅色：CSS 用 prefers-color-scheme 自动切；这里只同步浏览器 / 状态栏的 theme-color */
+var THEME_COLOR = {light:"#eef5f3", dark:"#0b1b19"};
+function syncThemeColor(){
+  var dark = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  qsa('meta[name="theme-color"]').forEach(function(m){ m.setAttribute("content", dark ? THEME_COLOR.dark : THEME_COLOR.light); });
+  document.documentElement.setAttribute("data-scheme", dark ? "dark" : "light");
+}
 function boot(){
   state = load(); refreshRefs(); save();   // 落盘一次性迁移结果
   $("lockForm").addEventListener("submit", function(e){ e.preventDefault(); tryUnlock(); });
@@ -1831,7 +2150,16 @@ function boot(){
   window.addEventListener("hashchange", route);
   document.addEventListener("visibilitychange", onResume);
   window.addEventListener("pageshow", function(e){ if(e.persisted) onResume(); });
-  document.addEventListener("keydown", function(e){ if(e.key === "Escape") closeSheet("ttSheet"); });
+  document.addEventListener("keydown", function(e){
+    if(e.key !== "Escape") return;
+    var top = ["rosterSheet","colSheet","ttSheet"].filter(function(id){ var el = $(id); return el && !el.hidden; })[0];
+    if(top) closeSheet(top);
+  });
+  syncThemeColor();
+  if(window.matchMedia){
+    var mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if(mq.addEventListener) mq.addEventListener("change", syncThemeColor); else if(mq.addListener) mq.addListener(syncThemeColor);
+  }
   setInterval(onResume, 5*60000);
   if(isUnlocked()) unlockApp(); else showLock();
   if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){

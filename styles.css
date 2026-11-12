@@ -1,4 +1,4 @@
-/* 白sir 的个人助手 · v3.1 · Liquid Glass（网页近似）
+/* 白sir 的个人助手 · v3.2 · Liquid Glass（网页近似）· 跟随系统深浅色
  * 原则：玻璃只用在导航 / 天气 / 面板 / 关键卡片；正文永远压在足够实的底板上，保证对比度。
  * 不支持 backdrop-filter 的浏览器自动退回实色。
  */
@@ -14,6 +14,10 @@
   --warn:#9a4a07; --warn-soft:rgba(245,166,35,.18);
   --danger:#b42318; --danger-soft:rgba(220,60,50,.12);
   --info:#175a8c;  --info-soft:rgba(60,140,210,.13);
+  --ok:#11733a; --ok-soft:rgba(22,163,74,.13);
+  --field-bg:rgba(255,255,255,.92); --field-line:rgba(13,60,55,.14);
+  --track:rgba(15,118,110,.13); --tick-line:rgba(13,60,55,.28);
+  --sheet-bg:rgba(248,252,251,.97);
 
   --glass:rgba(255,255,255,.58);
   --glass-strong:rgba(255,255,255,.74);
@@ -30,11 +34,11 @@
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
   --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
   --ease:cubic-bezier(.2,.8,.2,1);
-  color-scheme:light;
+  color-scheme:light dark;
 }
 *,*::before,*::after{box-sizing:border-box}
 [hidden]{display:none!important}
-html{-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--bg)}
+html{color-scheme:light dark;-webkit-text-size-adjust:100%;text-size-adjust:100%;background:var(--bg)}
 html.sheet-open,html.sheet-open body{overflow:hidden}
 body{
   margin:0;min-height:100vh;min-height:100dvh;color:var(--ink);
@@ -457,6 +461,61 @@ input[aria-invalid=true]{border-color:var(--danger);box-shadow:0 0 0 4px var(--d
 .nt-entry-new{flex:0 0 auto;min-height:56px;border-radius:var(--r-md)}
 .ics-pre{font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace!important;min-height:180px;background:rgba(13,40,36,.03)!important}
 
+/* ---------- 收齐表 / 本班名单（v3.2） ---------- */
+.btn-col{color:#fff;background:linear-gradient(180deg,#14998c,#0f766e);box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 6px 14px -8px rgba(15,118,110,.7)}
+.nt-entry{align-items:stretch}
+.nt-entry-rows{flex:1;min-width:0;display:grid;gap:8px}
+.nt-entry-new{align-self:flex-start}
+.nt-prog{font-style:normal;font-weight:700;color:var(--brand-ink)}
+.nt-prog.ok{color:var(--ok)}
+.nt-prog.none{color:var(--warn)}
+.nt-roster{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:10px 14px;border-radius:var(--r-md);background:var(--brand-soft)}
+.nt-roster p{flex:1 1 200px;font-size:14px;line-height:1.5;color:var(--ink2)}
+.sheet-tall{height:calc(100dvh - var(--safe-t) - 24px)}
+.sheet-tall .sheet-body{flex:1 1 auto}
+.sheet-hgroup{min-width:0}
+.sheet-sub{margin-top:2px;font-size:14px;color:var(--ink2);line-height:1.45;overflow-wrap:anywhere}
+.col-top{position:sticky;top:0;z-index:2;margin:0 -22px;padding:10px 22px 10px;background:var(--sheet-bg)}
+.col-stat{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.col-stat b{font:700 34px/1 var(--font-display);color:var(--brand-ink)}
+.col-stat span{font-size:16px;font-weight:650;color:var(--ink2)}
+.col-stat em{margin-left:auto;font-style:normal;font-size:15px;font-weight:700;color:var(--warn);background:var(--warn-soft);padding:3px 10px;border-radius:999px}
+.col-stat em.ok{color:var(--ok);background:var(--ok-soft)}
+.col-bar{height:8px;margin-top:10px;border-radius:999px;background:var(--track);overflow:hidden}
+.col-bar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--brand2);transition:width .3s var(--ease)}
+.col-acts{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-top:4px}
+.col-acts .btn-primary{flex:1 1 160px}
+.col-msg{margin-top:12px;padding:10px 12px;border-radius:12px;font-size:14.5px;line-height:1.55;color:var(--ink);background:var(--info-soft)}
+.col-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}
+.col-list .empty{grid-column:1 / -1}
+.col-name{width:100%;min-height:54px;display:flex;align-items:center;gap:10px;padding:8px 12px;border:0;border-radius:var(--r-sm);text-align:left;
+  font-size:16.5px;font-weight:650;color:var(--ink);background:var(--field-bg);box-shadow:inset 0 0 0 1px var(--field-line);transition:background .15s,box-shadow .15s}
+.col-name i{flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:inset 0 0 0 2px var(--tick-line)}
+.col-name svg{width:16px;height:16px;fill:none;stroke:transparent;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+.col-name span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-name.on{background:var(--brand-soft);box-shadow:inset 0 0 0 1.5px var(--brand2)}
+.col-name.on i{background:var(--brand2);box-shadow:none}
+.col-name.on svg{stroke:#fff}
+.col-name:active{transform:scale(.98)}
+.col-orphan{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border-radius:12px;background:var(--warn-soft)}
+.col-orphan p{flex:1 1 220px;font-size:14px;line-height:1.55;color:var(--ink)}
+.col-chat{margin-top:16px}
+.col-empty{padding-top:6px}
+.col-empty-t{font-size:16px;line-height:1.6;color:var(--ink);padding:12px 14px;border-radius:var(--r-md);background:var(--warn-soft)}
+.col-empty .btn-block{margin-top:12px;min-height:52px}
+.col-empty .hint{margin-top:10px}
+.ro-one{margin-top:6px}
+.ro-count{margin-top:14px}
+.ro-list{display:grid;gap:6px;margin-top:8px;padding-bottom:8px}
+.ro-list li{display:flex;align-items:center;gap:8px}
+.ro-i{flex:0 0 28px;text-align:right;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ro-list input.ro-name{min-height:46px;padding:8px 12px;font-size:16px}
+.ro-del{flex:0 0 40px;width:40px;height:40px;color:var(--danger)}
+.sheet-foot{flex-wrap:wrap}
+@media (min-width:700px){
+  .col-list{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
 /* ---------- 护肤 ---------- */
 .week-plan{display:grid;gap:8px}
 .wp-row{display:grid;grid-template-columns:58px minmax(0,1fr);gap:12px;align-items:start;padding:14px 16px;border-radius:var(--r-md);background:var(--plate);box-shadow:var(--edge),0 6px 18px -14px rgba(13,60,55,.35)}
@@ -606,3 +665,175 @@ input[aria-invalid=true]{border-color:var(--danger);box-shadow:0 0 0 4px var(--d
 .checkin-stat{text-align:left}
 .checkin-stat span{display:inline;margin-left:8px}
 .seg-wide button{padding:6px 4px;white-space:nowrap;font-size:14px}
+
+/* =====================================================================
+ * 深色（v3.2）：跟随系统 prefers-color-scheme，不做开关。
+ * 底：墨青 / 深松绿（不是纯黑，也不是蓝黑）；卡片：半透明深玻璃 + 细亮描边；
+ * 主色仍是青绿（文字用提亮的 #5ee0cc，按钮底仍是 #0f766e 系）；正文接近白，次要文字也 ≥ 7:1。
+ * 只在屏幕上生效，打印永远是浅色。
+ * ===================================================================== */
+@media screen and (prefers-color-scheme:dark){
+  :root{
+    --bg:#0b1b19;
+    --ink:#eef8f5;            /* 正文：≈ 15:1（卡片 #142a27） */
+    --ink2:#c9dcd6;           /* 次要正文：≈ 11:1 */
+    --muted:#a3bab3;          /* 说明 / 标签：≈ 7.5:1 */
+    --brand:#0f8277;          /* 作底色（白字）≈ 4.6:1 */
+    --brand-ink:#5ee0cc;      /* 作文字 ≈ 9:1 */
+    --brand2:#1fb5a5;
+    --brand-soft:rgba(45,212,191,.16);
+    --warn:#ffbd6b; --warn-soft:rgba(255,166,64,.16);
+    --danger:#ff9389; --danger-soft:rgba(255,100,90,.15);
+    --info:#93cbff;  --info-soft:rgba(100,170,255,.15);
+    --ok:#6ee7a0; --ok-soft:rgba(60,200,120,.15);
+    --field-bg:rgba(6,20,18,.55); --field-line:rgba(170,235,222,.18);
+    --track:rgba(170,235,222,.12); --tick-line:rgba(190,235,225,.45);
+    --sheet-bg:rgba(17,36,33,.98);
+
+    --glass:rgba(22,44,41,.62);
+    --glass-strong:rgba(22,44,41,.80);
+    --plate:rgba(20,42,39,.86);
+    --plate-solid:#142a27;
+    --hair:rgba(190,240,228,.12);
+    --edge:inset 0 1px 0 rgba(255,255,255,.07), inset 0 0 0 1px rgba(160,235,220,.11);
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -14px rgba(0,0,0,.65);
+    --shadow-lg:0 2px 6px rgba(0,0,0,.35), 0 24px 60px -20px rgba(0,0,0,.75);
+  }
+  body::before{
+    background:
+      radial-gradient(42vmax 34vmax at 8% 6%, rgba(20,140,122,.38), transparent 62%),
+      radial-gradient(38vmax 30vmax at 96% 4%, rgba(30,96,120,.34), transparent 60%),
+      radial-gradient(46vmax 36vmax at 88% 72%, rgba(18,120,98,.30), transparent 62%),
+      radial-gradient(36vmax 30vmax at 4% 88%, rgba(120,92,40,.20), transparent 60%),
+      linear-gradient(180deg,#0d201d 0%,#091715 100%);
+  }
+  code{background:rgba(255,255,255,.08)}
+  ::selection{background:rgba(45,212,191,.35)}
+
+  /* 导航：底栏 / 侧栏 —— 背景够实，避免和内容糊成一块 */
+  .tabbar{background:rgba(16,34,31,.80);box-shadow:var(--edge),0 1px 2px rgba(0,0,0,.4),0 18px 40px -12px rgba(0,0,0,.7)}
+  .tabbar::before{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0) 55%)}
+  .tab{color:#bcd0ca}
+  .tab.on{color:var(--brand-ink);background:rgba(45,212,191,.16);box-shadow:inset 0 0 0 1px rgba(94,224,204,.28),0 4px 14px -6px rgba(0,0,0,.6)}
+  .tab-dot{background:#ff6b6b;box-shadow:0 0 0 2px #10221f}
+  .subtabs{background:rgba(16,34,31,.82)}
+  .subtabs button.on{box-shadow:0 6px 14px -6px rgba(0,0,0,.7)}
+
+  /* 今日 */
+  .ring-bg{stroke:rgba(94,224,204,.16)}
+  .chip{background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(170,235,222,.14),0 2px 8px -4px rgba(0,0,0,.5)}
+  .chip.hot{color:var(--warn);background:rgba(255,166,64,.15)}
+  .chip.sm.past{background:rgba(255,255,255,.06)}
+  .wx{background:rgba(22,46,43,.70)}
+  .wx::before{background:linear-gradient(160deg,rgba(255,255,255,.06) 0%,rgba(255,255,255,0) 42%),radial-gradient(120% 90% at 100% 0%,rgba(60,150,200,.18),transparent 60%)}
+  .wx-stats div{background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(170,235,222,.10)}
+  .adv{background:rgba(255,255,255,.07)}
+  .btn-icon{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(170,235,222,.16),0 2px 8px -3px rgba(0,0,0,.5)}
+  .tl::before{background:linear-gradient(rgba(94,224,204,.30),rgba(94,224,204,.08))}
+  .tl-time b{background:#163330;box-shadow:0 0 0 4px var(--bg)}
+  .tl-main:active{background:rgba(255,255,255,.05)}
+  .tag.rest,.tl-row.gray .tag{color:#c0d2cc;background:rgba(255,255,255,.08)}
+  .tick svg{box-shadow:inset 0 0 0 2px var(--tick-line);background:rgba(255,255,255,.04)}
+  .tick.on svg{box-shadow:0 4px 12px -4px rgba(0,0,0,.6)}
+  .tl-row.done .tl-card{background:rgba(20,42,39,.55)}
+  .tl-row.done .tl-title{text-decoration-color:rgba(200,230,222,.4)}
+  .tl-row.next .tl-card{box-shadow:var(--edge),0 0 0 2px rgba(45,212,191,.55),0 12px 28px -14px rgba(0,0,0,.7)}
+  .tl-row.night .tl-card{background:linear-gradient(135deg,#0b5a53,#0d6e65 60%,#11837a);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 16px 34px -16px rgba(0,0,0,.75)}
+  .tl-row.night .tag{color:#073b36;background:rgba(230,250,245,.92)}
+  .tonight{background:linear-gradient(140deg,#0a514b 0%,#0d675f 55%,#128276 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),var(--shadow-lg)}
+  .rdot.red{background:#ff6b5e}.rdot.orange{background:#ff9f45}.rdot.yellow{background:#f2c94c}.rdot.blue{background:#5aa8ff}
+
+  /* 折叠帮助 / 卡片 */
+  .help{background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(170,235,222,.10)}
+  .card .help{background:rgba(255,255,255,.045)}
+
+  /* 按钮 / 表单 */
+  .btn{background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(170,235,222,.18),0 2px 8px -4px rgba(0,0,0,.5)}
+  .btn:active{background:rgba(255,255,255,.14)}
+  .btn-primary,.btn-col{color:#fff;background:linear-gradient(180deg,#13968a,#0e7469);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 8px 18px -8px rgba(0,0,0,.7)}
+  .btn-primary:active{background:linear-gradient(180deg,#118a7e,#0d6a63)}
+  .btn-ghost{background:transparent;box-shadow:none}
+  .btn-danger-ghost{color:var(--danger);background:rgba(255,100,90,.08);box-shadow:inset 0 0 0 1px rgba(255,140,130,.30)}
+  input:not([type=checkbox]):not([type=file]),select,textarea{color:var(--ink);background-color:var(--field-bg);border-color:var(--field-line);color-scheme:dark}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235ee0cc' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E")}
+  select option{background:#132825;color:var(--ink)}
+  input::placeholder,textarea::placeholder{color:#8ba39c}
+  input:focus,select:focus,textarea:focus{border-color:var(--brand2);box-shadow:0 0 0 4px rgba(45,212,191,.22)}
+  input::-webkit-calendar-picker-indicator{filter:invert(.85) sepia(.3) hue-rotate(120deg);opacity:.9}
+  .seg{background:rgba(255,255,255,.07)}
+  .seg button.on{background:rgba(255,255,255,.16);color:#fff;box-shadow:0 3px 10px -3px rgba(0,0,0,.6),inset 0 0 0 1px rgba(170,235,222,.18)}
+  .switch-row{background:rgba(255,255,255,.05)}
+  .switch-row input{background:rgba(160,180,176,.32)}
+  .switch-row input:checked{background:#30d158}
+  .note{color:#cfe6ff;background:rgba(70,140,210,.16);box-shadow:inset 0 0 0 1px rgba(140,190,255,.16)}
+  .note b{color:#e8f3ff}
+  .note-warn{color:#ffe0b8;background:rgba(255,160,60,.14);box-shadow:inset 0 0 0 1px rgba(255,190,120,.18)}
+  .note-warn b{color:#fff0db}
+
+  /* 课表 */
+  .tt-day.today{box-shadow:var(--edge),0 0 0 2px rgba(45,212,191,.5),var(--shadow)}
+  .tt-lesson:active{background:rgba(255,255,255,.05)}
+  .chev{stroke:#87a19a}
+  .tt-lesson.off .tt-nm b{text-decoration-color:rgba(220,240,235,.45)}
+
+  /* 面板 */
+  .sheet-backdrop{background:rgba(0,8,7,.6)}
+  .sheet-panel{background:rgba(17,36,33,.94)}
+  .sheet-head::before{background:rgba(220,245,238,.25)}
+
+  /* 待办 / 风险 */
+  .filters button{background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(170,235,222,.12);color:var(--ink2)}
+  .filters button.on{color:#fff;background:var(--brand)}
+  .filters .f-risk.on{background:#b5560f}
+  .todo.done{background:rgba(20,42,39,.55)}
+  .risk-red,.c-red{background:rgba(255,90,80,.18);color:#ffb4ab}
+  .risk-orange,.c-orange{background:rgba(255,150,60,.18);color:#ffc890}
+  .risk-yellow,.c-yellow{background:rgba(240,200,60,.17);color:#f5da85}
+  .risk-blue,.c-blue{background:rgba(90,160,255,.18);color:#b0d2ff}
+  .mx{background:rgba(255,255,255,.04)}
+  .mx th{background:rgba(255,255,255,.06)}
+
+  /* 转发通知 */
+  #ntOut{background:rgba(6,20,18,.7)}
+  .nt-warn{color:#ffe0b8;background:rgba(255,160,60,.15);box-shadow:inset 0 0 0 1px rgba(255,180,100,.30)}
+  .chk{background:#c2570c;color:#fff}
+  .nt-note-warn{color:#ffc890}
+  .nt-log-item{background:rgba(255,255,255,.05)}
+  .nt-entry-btn i{color:var(--brand-ink)}
+  .ics-pre{background:rgba(6,20,18,.6)!important}
+
+  /* 护肤 */
+  .wp-row,.stock-item,.rules li{box-shadow:var(--edge),0 6px 18px -14px rgba(0,0,0,.7)}
+  .wp-row.today{box-shadow:var(--edge),0 0 0 2px rgba(45,212,191,.5),0 10px 24px -14px rgba(0,0,0,.7)}
+  .qa-warm{background:linear-gradient(165deg,rgba(90,64,24,.40),rgba(20,42,39,.86) 60%)}
+  .qa-cool{background:linear-gradient(165deg,rgba(30,70,110,.40),rgba(20,42,39,.86) 60%)}
+  .verdict-no{color:#ffb4ab}
+  .verdict-cond{color:#ffd29a}
+  .buy-card.must{box-shadow:var(--edge),0 0 0 1.5px rgba(45,212,191,.40),var(--shadow)}
+  .dot.ok{background:#3ccf7a}.dot.mid{background:#f0b440}.dot.no{background:#ff6b5e}.dot.hold{background:#90a8a1}
+  .lab-ok{color:#6ee7a0}.lab-mid{color:#f5c76a}.lab-no{color:#ffa69c}.lab-hold{color:#b3c6c0}
+  .cell{background:rgba(255,255,255,.07)}
+  .cell.today{box-shadow:0 0 0 2.5px #f0a33a}
+  .cell.future{color:#7f9891;background:rgba(255,255,255,.03)}
+  .lg-off{background:rgba(255,255,255,.10)}.lg-today{box-shadow:inset 0 0 0 2px #f0a33a}.lg-future{background:rgba(255,255,255,.04);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10)}
+
+  /* 锁屏 / Toast：Toast 在深色里用浅底深字，才跳得出来 */
+  .lock-card{background:rgba(20,42,39,.80)}
+  .toast{color:#0b1f1c;background:rgba(232,246,242,.96);box-shadow:0 12px 30px -10px rgba(0,0,0,.7)}
+}
+@media screen and (prefers-color-scheme:dark) and (min-width:1024px){
+  .tabbar::before{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0) 30%)}
+  .tab:hover:not(.on){background:rgba(255,255,255,.06)}
+  .tl-main:hover,.tt-lesson:hover{background:rgba(255,255,255,.04)}
+  .cell:hover{box-shadow:inset 0 0 0 2px rgba(45,212,191,.5)}
+}
+@supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))){
+  @media screen and (prefers-color-scheme:dark){
+    .glass,.tabbar,.wx,.sheet-panel,.lock-card,.subtabs{background:rgba(17,36,33,.98)}
+    .card{background:var(--plate-solid)}
+  }
+}
+@media screen and (prefers-color-scheme:dark) and (prefers-reduced-transparency:reduce){
+  .glass,.tabbar,.wx,.sheet-panel,.lock-card,.subtabs{background:#122724;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .card{background:#142a27}
+}

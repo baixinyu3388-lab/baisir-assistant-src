@@ -1,11 +1,11 @@
-/* 白sir 的个人助手 · Service Worker · v3
+/* 白sir 的个人助手 · Service Worker · v3.2
  * - 只缓存 v3 应用壳；天气等跨域请求一律直连放行，绝不写进 CacheStorage
  *   （天气只存在 localStorage.weatherCache，页面自己处理超时 / 失败降级）。
  * - 应用壳“网络优先、超时回落缓存”：发新版后下次打开就能拿到，断网也能打开。
  * - 激活时删除所有旧缓存（v2 的 baiAssistant-shell-*），避免旧版卡住。
  * - WorkBuddy 网关要求带 ?sharecode=，所以预缓存 URL 带上它；匹配时 ignoreSearch。
  */
-var VERSION = "3.1.0";
+var VERSION = "3.2.0";
 var CACHE = "baisir-v3-shell-" + VERSION;
 var Q = "?sharecode=XQYKQCQM2D";
 var APP_SHELL = [

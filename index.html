@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#eef5f3">
-<meta name="color-scheme" content="light">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef5f3">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b1b19">
+<meta name="color-scheme" content="light dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -15,7 +16,7 @@
 <link rel="manifest" href="manifest.webmanifest?sharecode=XQYKQCQM2D">
 <link rel="icon" href="icon.svg?sharecode=XQYKQCQM2D" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?sharecode=XQYKQCQM2D">
-<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.1.0">
+<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.2.0">
 </head>
 <body>
 
@@ -59,7 +60,7 @@
     <a class="tab" href="#/settings" data-tab="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       <span>设置</span></a>
-    <p class="brand-foot">v3.1 · 数据只在本机</p>
+    <p class="brand-foot">v3.2 · 数据只在本机</p>
   </nav>
 
   <main class="main" id="main" tabindex="-1">
@@ -327,6 +328,10 @@
             <input type="checkbox" id="ntColOn" checked>
             <span><b>提醒我收齐</b><small id="ntColHint">—</small></span>
           </label>
+          <div class="nt-roster">
+            <p id="ntRosterState">—</p>
+            <button class="btn btn-sm" type="button" data-act="ro-open">本班名单</button>
+          </div>
           <button class="btn btn-primary btn-block nt-add" type="button" data-act="nt-todo">加入待办</button>
         </article>
 
@@ -517,6 +522,15 @@
         </article>
 
         <article class="card set-card">
+          <h2 class="card-title">本班名单</h2>
+          <p class="state-line" id="rosterState">—</p>
+          <p class="hint">收齐待办里用来逐人勾「已交」、一键复制没交的人。只存在这台设备，不上传，也不连微信 / QQ。</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" type="button" data-act="ro-open">导入 / 管理名单</button>
+          </div>
+        </article>
+
+        <article class="card set-card">
           <h2 class="card-title">4 位口令</h2>
           <p class="state-line" id="pinState">—</p>
           <div class="field-inline">
@@ -565,7 +579,7 @@
       </div>
 
       <footer class="foot">
-        白sir 的个人助手 · v3.1 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
+        白sir 的个人助手 · v3.2 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
         数据仅存本机浏览器 · 天气数据 Open-Meteo (CC BY 4.0)
       </footer>
     </section>
@@ -620,9 +634,101 @@
       </div>
     </form>
   </div>
+
+  <!-- 收齐表（v3.2） -->
+  <div class="sheet" id="colSheet" hidden>
+    <div class="sheet-backdrop" data-act="col-close"></div>
+    <div class="sheet-panel sheet-tall" role="dialog" aria-modal="true" aria-labelledby="colTitle">
+      <div class="sheet-head">
+        <div class="sheet-hgroup"><h2 id="colTitle">收齐表</h2><p class="sheet-sub" id="colSub">—</p></div>
+        <button class="btn btn-icon" type="button" data-act="col-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body" id="colBody">
+        <div class="col-empty" id="colEmpty" hidden>
+          <p class="col-empty-t"><b>先导入名单</b>，才能逐人勾谁交了。</p>
+          <label class="field"><span>把本班名单粘贴到这里（一行一个，也可以用逗号、顿号、空格隔开）</span>
+            <textarea id="colRosterRaw" rows="6" placeholder="从班级群 / 教务系统复制名单，长按粘贴"></textarea></label>
+          <button class="btn btn-primary btn-block" type="button" data-act="col-import">导入名单</button>
+          <p class="hint">序号、学号会自动去掉，重复的只留一个。名单只存在这台设备，所有通知共用这一份。</p>
+        </div>
+        <div id="colMain" hidden>
+          <div class="col-top">
+            <p class="col-stat" id="colStat">—</p>
+            <div class="col-bar" aria-hidden="true"><i id="colBar"></i></div>
+          </div>
+          <div class="col-acts">
+            <button class="btn btn-primary" type="button" data-act="col-copy">复制未交名单</button>
+            <div class="seg" role="group" aria-label="筛选" id="colFilter">
+              <button type="button" data-act="col-filter" data-v="all" aria-pressed="true">全部</button>
+              <button type="button" data-act="col-filter" data-v="left" aria-pressed="false">未交</button>
+              <button type="button" data-act="col-filter" data-v="done" aria-pressed="false">已交</button>
+            </div>
+          </div>
+          <p class="col-msg" id="colMsg" role="status" hidden></p>
+          <ul class="col-list" id="colList"></ul>
+          <div class="col-orphan" id="colOrphan" hidden>
+            <p id="colOrphanTxt">—</p>
+            <button class="btn btn-sm btn-ghost" type="button" data-act="col-orphan-clear">清掉这些记录</button>
+          </div>
+          <details class="help col-chat" open>
+            <summary>从聊天记录勾选</summary>
+            <div>
+              <p>把微信 / QQ 群里大家回的「已交」整段复制过来，名单上出现的名字会自动勾上；只加不减，你手勾的不会被取消。</p>
+              <label class="field"><span class="sr-only">群聊天记录</span>
+                <textarea id="colChat" rows="5" placeholder="例：&#10;@班长 我交了&#10;某某：已交&#10;已交+某某"></textarea></label>
+              <div class="btn-row">
+                <button class="btn btn-primary" type="button" data-act="col-chat">匹配并勾选</button>
+                <button class="btn" type="button" data-act="col-chat-paste">从剪贴板粘贴</button>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-ghost" type="button" data-act="ro-open">本班名单</button>
+        <button class="btn btn-danger-ghost btn-sm" type="button" data-act="col-clear" id="colClearBtn">清空勾选</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" type="button" data-act="col-close">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 本班名单（v3.2） -->
+  <div class="sheet" id="rosterSheet" hidden>
+    <div class="sheet-backdrop" data-act="ro-close"></div>
+    <div class="sheet-panel sheet-tall" role="dialog" aria-modal="true" aria-labelledby="roTitle">
+      <div class="sheet-head">
+        <div class="sheet-hgroup"><h2 id="roTitle">本班名单</h2><p class="sheet-sub">只存在这台设备 · 所有通知共用</p></div>
+        <button class="btn btn-icon" type="button" data-act="ro-close" aria-label="关闭">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <label class="field"><span>粘贴名单（一行一个，也可以用逗号、顿号、空格隔开）</span>
+          <textarea id="roPaste" rows="5" placeholder="从班级群 / 教务系统复制名单，长按粘贴"></textarea></label>
+        <div class="btn-row">
+          <button class="btn btn-primary" type="button" data-act="ro-add">追加到名单</button>
+          <button class="btn" type="button" data-act="ro-replace">替换整份名单</button>
+        </div>
+        <form class="field-inline ro-one" id="roOneForm" autocomplete="off">
+          <label class="field"><span>加一个人</span><input id="roOne" placeholder="姓名" maxlength="20"></label>
+          <button class="btn" type="submit">添加</button>
+        </form>
+        <p class="hint ro-count" id="rosterCount">—</p>
+        <ol class="ro-list" id="rosterList"></ol>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn btn-danger-ghost btn-sm" type="button" data-act="ro-clear" id="rosterClear" hidden>清空名单</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" type="button" data-act="ro-close">完成</button>
+      </div>
+    </div>
+  </div>
 </div>
 </template>
 
-<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.1.0"></script>
+<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.2.0"></script>
 </body>
 </html>
