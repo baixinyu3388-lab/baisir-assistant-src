@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest?sharecode=XQYKQCQM2D">
 <link rel="icon" href="icon.svg?sharecode=XQYKQCQM2D" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?sharecode=XQYKQCQM2D">
-<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.0.0">
+<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.1.0">
 </head>
 <body>
 
@@ -59,7 +59,7 @@
     <a class="tab" href="#/settings" data-tab="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       <span>设置</span></a>
-    <p class="brand-foot">v3.0 · 数据只在本机</p>
+    <p class="brand-foot">v3.1 · 数据只在本机</p>
   </nav>
 
   <main class="main" id="main" tabindex="-1">
@@ -81,6 +81,7 @@
         </div>
       </header>
       <div class="chip-row" id="todayChips"></div>
+      <div class="nt-entry" id="ntEntry"></div>
 
       <div class="today-grid">
         <!-- 天气 -->
@@ -192,7 +193,7 @@
       </header>
       <div class="subtabs" role="tablist" aria-label="待办分区">
         <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="list">清单</button>
-        <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="notice">转发班长通知</button>
+        <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="notice">转发通知</button>
         <button type="button" role="tab" data-act="sub" data-view-sub="todos" data-v="remind">日历 / 通知</button>
       </div>
 
@@ -254,33 +255,84 @@
         </div>
       </div>
 
-      <!-- 班长通知转换 -->
+      <!-- 转发通知（v3.1） -->
       <div class="subview" data-sub="todos:notice" hidden>
-        <article class="card">
-          <h2 class="card-title">班长口吻 → 同学口吻</h2>
-          <p class="hint">逐句改措辞、<b>不删句</b>；仍含「班长」的句子会单独标出来给你人工核。纯本地，不联网、不上传班级通知。</p>
-          <div class="cvt-grid">
-            <label class="field">
-              <span>① 原文（老师 / 辅导员发给班长的）</span>
-              <textarea id="cvtRaw" rows="7" placeholder="例：请各班班长于11月10日22:00前收齐本班同学的安全教育承诺书（纸质签名版），以班级为单位交到潇湘校区B座201辅导员办公室，逾期不候，请务必通知到每位同学。"></textarea>
+        <div class="nt-grid">
+          <article class="card nt-raw-card">
+            <h2 class="card-title">转发通知</h2>
+            <label class="field nt-raw-field">
+              <span>粘贴辅导员或老师发来的通知</span>
+              <textarea id="ntRaw" rows="6" placeholder="长按这里粘贴，或点「从剪贴板粘贴」。粘贴后会自动生成群公告。"></textarea>
             </label>
+            <div class="btn-row nt-raw-btns">
+              <button class="btn btn-primary" type="button" data-act="nt-gen">生成群公告</button>
+              <button class="btn" type="button" data-act="nt-paste">从剪贴板粘贴</button>
+              <button class="btn btn-ghost" type="button" data-act="nt-clear">清空</button>
+            </div>
+            <p class="nt-local">只在本机处理，不上传通知内容。</p>
+          </article>
+
+          <article class="card nt-out-card" id="ntOutCard" hidden>
+            <h2 class="card-title">群公告 <small class="nt-sub">可以直接改</small></h2>
             <label class="field">
-              <span>② 生成文案（可直接改，改完再复制 / 建待办）</span>
-              <textarea id="cvtOut" rows="7" placeholder="点「解析并生成」"></textarea>
+              <span class="sr-only">群公告</span>
+              <textarea id="ntOut" rows="9"></textarea>
             </label>
+            <p class="nt-warn" id="ntOutWarn" hidden></p>
+            <button class="btn btn-primary btn-block nt-copy" type="button" data-act="nt-copy">复制群公告</button>
+          </article>
+        </div>
+
+        <article class="card nt-field-card" id="ntFieldCard" hidden>
+          <h2 class="card-title">核对要点</h2>
+          <p class="hint">标<b class="chk chk-inline">请核对</b>的是没认准或没找到的，改过就会消失。没改过公告时，字段一改公告会跟着变。</p>
+          <label class="field"><span>交什么 <em class="chk" id="chk-what" hidden>请核对</em></span><input id="ntWhat" placeholder="例：安全教育承诺书（纸质签名版）"></label>
+          <div class="field-2">
+            <label class="field"><span>谁来交 <em class="chk" id="chk-who" hidden>请核对</em></span><input id="ntWho" placeholder="全班同学 / 女生 / 每个宿舍"></label>
+            <label class="field"><span>怎么收</span>
+              <select id="ntMode">
+                <option value="monitor">交给我，我统一交</option>
+                <option value="self">同学各自交过去</option>
+              </select>
+            </label>
+          </div>
+          <label class="field"><span>交到哪 <em class="chk" id="chk-where" hidden>请核对</em></span><input id="ntWhere" placeholder="例：潇湘校区B座201辅导员办公室 / 班群 / 学习通"></label>
+          <p class="nt-note" id="ntModeNote" hidden>原文要求以班级为单位 / 由班长统一，所以公告写成「交给我，由我统一交」，不会写成各自提交。</p>
+          <div class="field-2">
+            <label class="field"><span>同学截止 · 日期 <em class="chk" id="chk-due" hidden>请核对</em></span><input type="date" id="ntStuDate"></label>
+            <label class="field"><span>时间（24 小时）</span><input class="t24" id="ntStuTime" inputmode="numeric" placeholder="22:00" maxlength="5"></label>
+          </div>
+          <p class="nt-note" id="ntDueNote" hidden></p>
+          <div class="field-2">
+            <label class="field"><span>我要收齐的时间 · 日期 <em class="chk" id="chk-collect" hidden>请核对</em></span><input type="date" id="ntColDate"></label>
+            <label class="field"><span>时间（24 小时）</span><input class="t24" id="ntColTime" inputmode="numeric" placeholder="21:00" maxlength="5"></label>
+          </div>
+          <p class="nt-note">默认和同学截止一样。原文截止若是你交给辅导员的时间，想留余量就把「同学截止」往前改。</p>
+          <div class="field-2">
+            <label class="field"><span>硬性截止</span>
+              <select id="ntStrict"><option value="1">是，逾期不候</option><option value="0">否 / 没说</option></select>
+            </label>
+            <label class="field"><span>补充要求（材料 / 格式）</span><input id="ntExtra" placeholder="例：文件命名为 学号+姓名"></label>
           </div>
           <div class="btn-row">
-            <button class="btn btn-primary" type="button" data-act="cvt-go">解析并生成</button>
-            <button class="btn" type="button" data-act="cvt-copy">复制文案</button>
-            <button class="btn" type="button" data-act="cvt-todo">用这些字段建待办</button>
-            <span class="muted" id="cvtStat"></span>
+            <button class="btn" type="button" data-act="nt-rewrite">用这些字段重写公告</button>
           </div>
-          <div class="fields" id="cvtFields" hidden></div>
-          <div class="leftover" id="cvtLeft" hidden></div>
-          <details class="help">
-            <summary>为什么不接大模型？</summary>
-            <p>静态页放 API key 会泄露、得把班级通知传到外部，而且模型「润色」反而可能吞掉细节。规则版能给你逐句对照和字段表，可验证。真遇到嚼不动的长句再说接 API 的事。</p>
-          </details>
+
+          <h3 class="nt-h3">加入待办</h3>
+          <label class="switch-row">
+            <input type="checkbox" id="ntPostOn" checked>
+            <span><b>提醒我去发群</b><small id="ntPostHint">—</small></span>
+          </label>
+          <label class="switch-row">
+            <input type="checkbox" id="ntColOn" checked>
+            <span><b>提醒我收齐</b><small id="ntColHint">—</small></span>
+          </label>
+          <button class="btn btn-primary btn-block nt-add" type="button" data-act="nt-todo">加入待办</button>
+        </article>
+
+        <article class="card nt-log-card">
+          <h2 class="card-title">最近转发</h2>
+          <ul class="nt-log" id="ntLog"></ul>
         </article>
       </div>
 
@@ -513,7 +565,7 @@
       </div>
 
       <footer class="foot">
-        白sir 的个人助手 · v3.0 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
+        白sir 的个人助手 · v3.1 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
         数据仅存本机浏览器 · 天气数据 Open-Meteo (CC BY 4.0)
       </footer>
     </section>
@@ -571,6 +623,6 @@
 </div>
 </template>
 
-<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.0.0"></script>
+<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.1.0"></script>
 </body>
 </html>

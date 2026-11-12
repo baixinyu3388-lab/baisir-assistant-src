@@ -1,11 +1,11 @@
-/* 白sir 的个人助手 · v3.0 (2026-11-12)
+/* 白sir 的个人助手 · v3.1 (2026-11-12)
  * 纯静态、无构建、无后端。数据只在本机 localStorage（key: baiAssistant_v2，与 v2.2 完全兼容）。
  */
 (function(){
 "use strict";
 
 /* ================= 常量 ================= */
-var VERSION = "3.0.0";
+var VERSION = "3.1.0";
 var KEY = "baiAssistant_v2";          // 不要改：v2.2 的数据就在这里
 var V1KEY = "skinReset_v1";           // 更早的《护肤打卡》页
 var UNLOCK_KEY = "baiUnlocked";       // sessionStorage：当前标签页已解锁
@@ -116,6 +116,7 @@ function defaults(){
     timetable:sampleTimetable(),
     timetableIsSample:false,
     todos:[],
+    noticeLog:[],
     weatherCache:{data:null,fetchedAt:null},
     settings:{notifEnabled:false,lastIcsExport:null,semesterStart:"2026-09-07",totalWeeks:20,dailyReviewIcs:true}
   };
@@ -138,6 +139,7 @@ function load(){
   if(!Array.isArray(s.timetable) || s.timetable.length !== 7) s.timetable = sampleTimetable();
   for(var i=0;i<7;i++) if(!Array.isArray(s.timetable[i])) s.timetable[i] = [];
   if(!Array.isArray(s.todos)) s.todos = [];
+  if(!Array.isArray(s.noticeLog)) s.noticeLog = [];
   if(!s.meta.migratedFrom){
     var v1 = readV1();
     if(v1 && applyV1(s,v1)) s.meta.migratedFrom = "skinReset_v1";
@@ -582,6 +584,7 @@ function renderRing(rows){
   $("ring").setAttribute("aria-label", "今日完成 " + done + " / " + total + " 项");
 }
 function renderSoon(){
+  renderNoticeEntry();
   var now = Date.now(), lim = now + 48*3600000;
   var list = state.todos.filter(function(t){ var d = new Date(t.due).getTime(); return !t.done && isFinite(d) && d <= lim; })
     .sort(function(a,b){ return new Date(a.due) - new Date(b.due); }).slice(0,4);
@@ -777,111 +780,396 @@ function deleteCourse(){
   save(); closeSheet("ttSheet"); renderAll(); toast("已删除");
 }
 
-/* ================= 班长通知口吻转换（逐句，零删句；同 v2.2） ================= */
-var TONE_RULES = [
-  [/请各班班长/g,"请各位同学"],
-  [/各班班长/g,"各位同学"],
-  [/各位班长/g,"各位同学"],
-  [/班长收齐后/g,"请各位同学"],
-  [/由班长统一/g,"请各位同学自行"],
-  [/以班级为单位/g,"各自"],
-  [/请(?:务必)?通知(?:到)?(?:本班)?(?:每位|全班|各位)同学/g,"请相互转告"],
-  [/请(?:务必)?通知到/g,"请相互转告"],
-  [/请各班/g,"请各位同学"],
-  [/收齐/g,"提交"],
-  [/汇总/g,"填写"],
-  [/上报/g,"提交"]
-];
-function convertTone(piece){
-  var out = piece, changed = 0;
-  for(var i=0;i<TONE_RULES.length;i++){
-    var re = TONE_RULES[i][0]; re.lastIndex = 0;
-    if(re.test(out)){ changed++; re.lastIndex = 0; out = out.replace(re, TONE_RULES[i][1]); }
+/* ================= 转发通知：解析（纯函数，不碰 DOM；node 可单独测） ================= */
+/* NT-PARSER-START */
+var NT_DOW = {"一":0,"二":1,"三":2,"四":3,"五":4,"六":5,"日":6,"天":6,"1":0,"2":1,"3":2,"4":3,"5":4,"6":5,"7":6};
+var NT_DOW_NAME = ["周一","周二","周三","周四","周五","周六","周日"];
+var NT_PERIOD_DEF = {"早上":"09:00","上午":"09:00","中午":"12:00","下午":"17:00","傍晚":"18:00","晚上":"20:00","夜里":"22:00","凌晨":"06:00"};
+var NT_PERIOD_RE = /^\s*(早上|上午|中午|下午|傍晚|晚上|夜里|凌晨)/;
+function ntPad(n){ n = String(n); return n.length < 2 ? "0" + n : n; }
+function ntYmd(d){ return d.getFullYear() + "-" + ntPad(d.getMonth()+1) + "-" + ntPad(d.getDate()); }
+function ntDay0(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+function ntAddDays(d,n){ var x = new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
+function ntValidMD(mo,d){ return mo >= 1 && mo <= 12 && d >= 1 && d <= 31; }
+function ntScan(re, text, fn){ var m; re.lastIndex = 0; while((m = re.exec(text))){ fn(m); if(m[0] === "") re.lastIndex++; } }
+/* 找出所有「哪天」与「几点」，再挑最像截止的那一个 */
+function ntFindDue(text, now){
+  var today = ntDay0(now), dates = [], times = [], notes = [];
+  function absDate(y, mo, d, m, guessYear){
+    var dt = new Date(y, mo-1, d), pushed = false;
+    if(guessYear && +dt < +today){ dt = new Date(y+1, mo-1, d); pushed = true; }
+    dates.push({i:m.index, e:m.index + m[0].length, d:dt, src:m[0].trim(), sure:!pushed, note: pushed ? "「" + m[0].trim() + "」今年已经过了，按明年算" : ""});
   }
-  return {text:out, changed:changed, residual:/班长/.test(out)};
-}
-function noticeMeta(text){
-  var m = {}, now = new Date(), y = now.getFullYear(), mo = 0, d = 0, hh = "20", mm = "00";
-  var m1 = text.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
-  var m2 = text.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if(m1){ mo = +m1[1]; d = +m1[2]; }
-  else if(m2){ y = +m2[1]; mo = +m2[2]; d = +m2[3]; }
-  var tm = text.match(/(\d{1,2})\s*[:：]\s*(\d{2})/);
-  if(tm){ hh = pad(+tm[1]); mm = tm[2]; }
-  else { var t2 = text.match(/(\d{1,2})\s*点/); if(t2) hh = pad(+t2[1]); }
-  m.due = "";
-  if(mo && d){
-    var dt = new Date(y, mo-1, d);
-    if(+dt < +new Date(now.getFullYear(),now.getMonth(),now.getDate())) dt = new Date(y+1, mo-1, d);
-    m.due = fmt(dt) + "T" + hh + ":" + mm;
+  ntScan(/(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*[日号]?/g, text, function(m){
+    if(ntValidMD(+m[2], +m[3])) absDate(+m[1], +m[2], +m[3], m, false);
+  });
+  ntScan(/(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]?/g, text, function(m){
+    if(ntValidMD(+m[1], +m[2])) absDate(today.getFullYear(), +m[1], +m[2], m, true);
+  });
+  ntScan(/(\d{1,2})\s*[./]\s*(\d{1,2})(?![\d./])/g, text, function(m){
+    var before = text.charAt(m.index - 1);
+    if(/[\d./:：]/.test(before)) return;
+    var after = text.slice(m.index + m[0].length);
+    var mo = +m[1], d = +m[2];
+    if(/^\s*[点时]/.test(after)){
+      // 「11.10 点」：可能是 11月10日，也可能是 11:10 —— 当时间用，但必须请核对
+      if(mo <= 23 && d <= 59) times.push({i:m.index, e:m.index + m[0].length + after.match(/^\s*[点时]/)[0].length,
+        h:mo, mi:d, period:"", amb:"「" + m[0].trim() + "点」可能是 " + mo + "月" + d + "日，也可能是 " + ntPad(mo) + ":" + ntPad(d) + "，这里先按时间算"});
+      return;
+    }
+    if(ntValidMD(mo, d)) absDate(today.getFullYear(), mo, d, m, true);
+  });
+  ntScan(/(今天|今日|今晚|今早|今夜|明天|明日|明晚|明早|后天)(早上|上午|中午|下午|傍晚|晚上|夜里)?/g, text, function(m){
+    var w = m[1], off = /^今/.test(w) ? 0 : (w === "后天" ? 2 : 1);
+    var per = m[2] || ({"今晚":"晚上","今夜":"夜里","明晚":"晚上","今早":"早上","明早":"早上"})[w] || "";
+    dates.push({i:m.index, e:m.index + m[0].length, d:ntAddDays(today, off), src:m[0], sure:true, period:per, note:""});
+  });
+  ntScan(/(本|这|下个|下)?\s*(?:周|星期|礼拜)\s*([一二三四五六日天1-7])/g, text, function(m){
+    // 紧跟在具体日期后面的「（周二）」只是注释，不单独算
+    for(var k=0;k<dates.length;k++){ if(m.index >= dates[k].e && m.index - dates[k].e <= 3 && !m[1]) return; }
+    var target = NT_DOW[m[2]], cur = (today.getDay()+6)%7, pre = m[1] || "", d, sure = true, note = "";
+    var monday = ntAddDays(today, -cur);
+    if(pre === "下" || pre === "下个") d = ntAddDays(monday, 7 + target);
+    else if(pre){ d = ntAddDays(monday, target); if(target < cur){ sure = false; note = "「" + m[0].trim() + "」已经过了，请核对"; } }
+    else d = ntAddDays(monday, target < cur ? 7 + target : target);
+    dates.push({i:m.index, e:m.index + m[0].length, d:d, src:m[0].trim(), sure:sure, note:note});
+  });
+  ntScan(/(早上|上午|中午|下午|傍晚|晚上|夜里|凌晨)?\s*(\d{1,2})\s*(?:[:：]\s*(\d{2})|点\s*(半)|点\s*(\d{1,2})\s*分?|[点时])/g, text, function(m){
+    var before = text.charAt(m.index - 1);
+    if(!m[1] && /[\d./]/.test(before)) return;
+    for(var k=0;k<times.length;k++){ if(m.index < times[k].e && m.index + m[0].length > times[k].i) return; }
+    var h = +m[2], mi = m[3] ? +m[3] : (m[4] ? 30 : (m[5] ? +m[5] : 0));
+    if(h > 24 || mi > 59) return;
+    times.push({i:m.index, e:m.index + m[0].length, h:h, mi:mi, period:m[1] || ""});
+  });
+  dates.sort(function(a,b){ return a.i - b.i; });
+  // 去掉互相重叠的日期（保留先出现、更长的）
+  var ds = [];
+  for(var a=0;a<dates.length;a++){
+    var x = dates[a], clash = false;
+    for(var b=0;b<ds.length;b++){ if(x.i < ds[b].e && x.e > ds[b].i){ clash = true; if(x.e - x.i > ds[b].e - ds[b].i) ds[b] = x; break; } }
+    if(!clash) ds.push(x);
   }
-  m.when = m1 ? m1[0] + (tm ? " " + hh + ":" + mm : "") : (m2 ? m2[0] + " " + hh + ":" + mm : "未识别");
-  var au = text.match(/全班|全体|每位同学|各位同学|本班|各班|班委|宿舍|各组|男生|女生/);
-  m.audience = au ? (/全班|全体|每位同学|各位同学|本班|各班/.test(au[0]) ? "全班" : au[0]) : "全班";
-  var pl = text.match(/(?:交到|交给|发至|发到|提交至|上传至|送至|填至)([^，。；,;！!\n]{2,30})/);
-  m.place = pl ? pl[1].trim() : "";
-  var mt = text.match(/[^，。；,;！!\n]{0,18}(?:纸质|电子版|签名|盖章|截图|复印件|附件|表格|命名|格式|字数)[^，。；,;！!\n]{0,18}/);
-  m.material = mt ? mt[0].trim() : "";
-  m.strict = /逾期不候|过期不候|不可补交|不得补交|无补交|务必|必须/.test(text);
-  return m;
-}
-function parseMonitorNotice(raw){
-  var text = String(raw || "").replace(/\r/g,"").trim();
-  var pieces = text.split(/[。；;！!？?\n，,]+/).map(function(x){ return x.trim(); }).filter(function(x){ return x; });
-  var lines = [], residual = [], changedCount = 0;
-  for(var i=0;i<pieces.length;i++){
-    var c = convertTone(pieces[i]);
-    lines.push({raw:pieces[i], out:c.text, changed:c.changed, residual:c.residual});
-    if(c.changed) changedCount++;
-    if(c.residual) residual.push(c.text);
+  function score(i, e){
+    var s = 0, after = text.slice(e, e + 14), before = text.slice(Math.max(0, i - 8), i);
+    if(/^[^，。；;！!\n]{0,12}?(前|之前|以前|截止|为止|过期|逾期)/.test(after)) s += 10;
+    if(/(截止|截至|最晚|最迟)[^，。；;\n]{0,4}$/.test(before)) s += 8;
+    else if(/(于|在)\s*$/.test(before)) s += 2;
+    return s;
   }
-  var meta = noticeMeta(text);
-  var body = lines.map(function(l){ return l.out; }).join("；");
-  var broadcast = "【班委通知】各位同学：\n" + body + (body ? "。" : "") +
-                  "\n谢谢配合。——班长 白鑫宇";
-  var missing = [];
-  if(!meta.due) missing.push("没识别到截止时间，建待办会默认明天 20:00，请自己改");
-  if(!meta.place) missing.push("没识别到交付地点 / 方式，留意原文里有没有");
-  return {pieces:pieces, lines:lines, meta:meta, broadcast:broadcast,
-          residual:residual, changedCount:changedCount, missing:missing, raw:text};
+  var cands = [], used = {};
+  for(var c=0;c<ds.length;c++){
+    var D = ds[c], T = null;
+    for(var t=0;t<times.length;t++){
+      var gap = times[t].i - D.e;
+      if(gap >= 0 && gap <= 10 && !/[，。；;！!\n]/.test(text.slice(D.e, times[t].i))){ T = times[t]; used[t] = 1; break; }
+    }
+    var per = D.period || "";
+    if(!per){ var pm = text.slice(D.e, D.e + 6).match(NT_PERIOD_RE); if(pm) per = pm[1]; }
+    if(T && T.period) per = T.period;
+    var end = T ? T.e : D.e;
+    cands.push({D:D, T:T, per:per, i:D.i, e:end, s:score(D.i, end)});
+  }
+  for(var u=0;u<times.length;u++){
+    if(used[u]) continue;
+    cands.push({D:null, T:times[u], per:times[u].period, i:times[u].i, e:times[u].e, s:score(times[u].i, times[u].e) - 1});
+  }
+  if(!cands.length) return {due:"", sure:false, exact:false, period:"", src:"", note:"原文里没找到截止时间"};
+  cands.sort(function(p,q){ return q.s - p.s || p.i - q.i; });
+  var best = cands[0], sure = true, exact = false, hh = 20, mm = 0, day;
+  if(best.D){ day = best.D.d; if(!best.D.sure) sure = false; if(best.D.note) notes.push(best.D.note); }
+  if(best.T){
+    exact = true; hh = best.T.h; mm = best.T.mi;
+    if(/下午|傍晚|晚上|夜里/.test(best.per) && hh < 12) hh += 12;
+    if(best.per === "中午" && hh <= 2) hh += 12;
+    if(hh === 24){ hh = 23; mm = 59; }
+    if(best.T.amb){ sure = false; notes.push(best.T.amb); }
+  } else if(best.per){
+    var dp = NT_PERIOD_DEF[best.per].split(":"); hh = +dp[0]; mm = +dp[1]; sure = false;
+    notes.push("原文只写了「" + best.per + "」，先按 " + NT_PERIOD_DEF[best.per] + " 算");
+  } else { sure = false; notes.push("原文没写几点，先按 20:00 算"); }
+  if(!day){
+    sure = false;
+    var nowMin = now.getHours()*60 + now.getMinutes();
+    day = (hh*60 + mm > nowMin) ? today : ntAddDays(today, 1);
+    notes.push("原文只写了几点、没写哪天，先按" + (+day === +today ? "今天" : "明天") + "算");
+  }
+  var src = text.slice(best.i, best.e).trim();
+  return {due: ntYmd(day) + "T" + ntPad(hh) + ":" + ntPad(mm), sure:sure, exact:exact, period: exact ? "" : best.per, src:src, note:notes.join("；")};
 }
-function runConvert(){
-  var raw = $("cvtRaw").value;
-  if(!raw.trim()){ toast("先把班长通知原文贴进去"); return; }
-  var r = parseMonitorNotice(raw);
-  if(!r.pieces.length){ toast("没解析出内容"); return; }
-  $("cvtOut").value = r.broadcast;
-  var f = '<p><b>逐句对照：</b>原文 ' + r.pieces.length + ' 句 → 生成 ' + r.lines.length + ' 句，没有删句；改动 ' + r.changedCount + ' 句。</p>' +
-    '<dl>' +
-    '<div><dt>截止</dt><dd>' + esc(r.meta.when) + '</dd></div>' +
-    '<div><dt>对象</dt><dd>' + esc(r.meta.audience) + '</dd></div>' +
-    '<div><dt>交付</dt><dd>' + esc(r.meta.place || "未识别") + '</dd></div>' +
-    '<div><dt>材料</dt><dd>' + esc(r.meta.material || "未识别") + '</dd></div>' +
-    '<div><dt>硬性截止</dt><dd>' + (r.meta.strict ? "是" : "否") + '</dd></div>' +
-    '<div><dt>建待办用</dt><dd>' + esc(r.meta.due ? r.meta.due.replace("T"," ") : "明天 20:00（默认）") + '</dd></div>' +
-    '</dl>';
-  var box = $("cvtFields"); box.innerHTML = f; box.hidden = false;
-  var left = $("cvtLeft"), notes = [];
-  if(r.residual.length) notes.push("以下句子仍含「班长」，可能需要你手动改：\n· " + r.residual.join("\n· "));
-  for(var mi=0;mi<r.missing.length;mi++) notes.push("· " + r.missing[mi]);
-  if(notes.length){ left.hidden = false; left.textContent = notes.join("\n"); }
-  else { left.hidden = true; left.textContent = ""; }
-  $("cvtStat").textContent = "原文 " + r.pieces.length + " 句全部保留";
-  toast("已生成，自己核一遍再发");
+function ntCleanWhat(s){
+  s = String(s || "").replace(/^\s+|\s+$/g, "");
+  s = s.replace(/^(?:好|一下|齐)/, "");
+  s = s.replace(/^(?:本班|全班|各班|各位|每位|所有|全体)?(?:同学|学生)(?:们)?的?/, "");
+  s = s.replace(/^(?:本班|全班)的?/, "");
+  s = s.replace(/(?:统一|一并|按时|及时|务必|并)$/, "");
+  return s.replace(/^\s+|\s+$/g, "").slice(0, 40);
 }
-function convertToTodo(){
-  var raw = $("cvtRaw").value.trim();
-  if(!raw){ toast("先把班长通知原文贴进去"); return; }
-  var r = parseMonitorNotice(raw);
-  var out = $("cvtOut").value.trim() || r.broadcast;
-  var first = (r.lines[0] ? r.lines[0].out : "班长通知").replace(/^请(?:各位同学|各班)[，,]?/, "").trim();
-  var title = first.length > 30 ? first.slice(0,30) + "…" : (first || "班长通知");
-  var due = r.meta.due ? localISO(r.meta.due) : localISO(fmt(addDays(new Date(),1)) + "T20:00");
-  state.todos.push({id:uid(), title:title, type:"notice", due:due, leadMin:1440,
-    audience:r.meta.audience, note:raw, broadcast:out, done:false, createdAt:new Date().toISOString()});
-  save(); renderTodos(); renderSoon(); renderReminders();
-  toast(r.meta.due ? "已建待办；记得导 .ics 进日历" : "已建待办（截止默认明天 20:00，记得改）");
-  go("todos", "list");
+var NT_WHERE_RE = /(交到|交给|交至|送到|送至|发到|发至|发送到|发送至|发给|提交到|提交至|上传到|上传至|填到|填至|放到|报送至|报送到)\s*([^，。；,;！!\n]{2,30})/;
+function parseNotice(raw, now){
+  now = now || new Date();
+  var text = String(raw || "").replace(/\r/g, "").trim();
+  var flat0 = text.replace(/\s*\n\s*/g, "，");
+  var due = ntFindDue(flat0, now);
+  // 括号里的逗号不当分句（「（Word，不少于800字）」）
+  var flat = flat0.replace(/（[^（）]*）|\([^()]*\)/g, function(s){ return s.replace(/[，,]/g, "、"); });
+  // 交到哪
+  var where = "", verb = "", wm = flat.match(NT_WHERE_RE);
+  if(wm){
+    verb = wm[1];
+    where = wm[2].replace(/(?:即可|就行|就可以|处|前|之前)$/, "").replace(/^\s+|\s+$/g, "");
+    where = where.replace(/[于在]?\s*\d{1,2}\s*月.*$/, "").replace(/^\s+|\s+$/g, "");
+    if(/^(?:辅导员|老师|我)$/.test(where) && verb === "交给") where = where; // 交给辅导员 也算地点
+  }
+  // 交什么
+  var what = "", m;
+  var reA = /(?:把|将)(?!于)([^，。；,;！!\n]{2,40}?)(?:统一|一并|按时|及时)?(?:交到|交给|交至|发到|发至|发送到|发送至|发给|提交到|提交至|上传到|上传至|送到|送至|填到|填至|放到|交上|上交|提交|上传|填写|交|发|送)/;
+  m = flat.match(reA);
+  if(m) what = ntCleanWhat(m[1]);
+  if(!what){
+    var reB = /(收齐|收集|汇总|统计|上交|提交|填写|完成|上传|报送|上报|交)(?!到|给|至|于|流)([^，。；,;！!\n]{2,40})/g, mb;
+    reB.lastIndex = 0;
+    while((mb = reB.exec(flat))){
+      var cand = mb[2].replace(/(?:交到|交给|交至|发到|发至|提交至|提交到|上传至|上传到|送至|送到)[\s\S]*$/, "").replace(/(?:以班级为单位|由班长统一)[\s\S]*$/, "");
+      cand = ntCleanWhat(cand);
+      if(cand.length >= 2 && !/^(?:时间|截止)/.test(cand)){
+        var tail = !where && cand.match(/^(.{2,}?)(?:到|至)([^（）()]{2,20})$/);
+        if(tail){ cand = ntCleanWhat(tail[1]); where = tail[2].replace(/(?:即可|就行|前|之前)$/, ""); verb = /上传/.test(mb[1]) ? "上传到" : "提交到"; }
+        what = cand; break;
+      }
+    }
+  }
+  // 谁来交
+  var who = "", whoSure = true;
+  var am = flat.match(/(全体同学|全班同学|每位同学|所有同学|本班同学|本班学生|各位同学|男生|女生|男同学|女同学|宿舍长|寝室长|各宿舍|每个宿舍|各寝室|团员|党员|入党积极分子|班委|各组组长|小组长|新生|学生干部)/);
+  if(am){
+    var a = am[1];
+    who = /全体|全班|每位|所有|本班|各位/.test(a) ? "全班同学" : (/各宿舍|每个宿舍|各寝室/.test(a) ? "每个宿舍" : a.replace("男同学","男生").replace("女同学","女生"));
+  } else { who = "全班同学"; whoSure = false; }
+  // 收法：以班级为单位 / 班长收齐 / 统一 → 同学交给我，我统一交（不允许改成「各自提交」）
+  var mode = /以班级为单位|由班长统一|班长(?:统一)?(?:收齐|收集|汇总)|收齐|汇总|统一(?:提交|上交|交|报送)|统一收/.test(flat) ? "monitor" : "self";
+  // 材料 / 格式补充（原句照录，带「班长」「各班」的不录）
+  var extra = [], clauses = flat.split(/[，。；;！!,]+/);
+  for(var i=0;i<clauses.length && extra.length < 2;i++){
+    var cl = clauses[i].replace(/^\s+|\s+$/g, "");
+    if(!cl || /班长|各班|逾期|过期|不候/.test(cl)) continue;
+    var km = cl.match(/纸质|电子版|手写|签名|签字|盖章|截图|复印件|扫描件|附件|表格|命名|格式|PDF|pdf|Word|word|Excel|字数|照片|证件照/);
+    if(!km) continue;
+    if(what && what.indexOf(km[0]) >= 0) continue;
+    if(what && cl.indexOf(what) >= 0) continue;
+    extra.push(cl.replace(/^(?:请|并|另外|注意)/, ""));
+  }
+  var sm = flat.match(/逾期不候|过期不候|过时不候|逾期不予[^，。；,;！!\n]{0,4}|不予受理|不可补交|不得补交|不接受补交|不再补收|一律不收/);
+  var flags = {what:!what, where:!where, who:!whoSure, due:!due.sure, collect:!due.sure};
+  return {raw:text, what:what, where:where, verb:verb, who:who, mode:mode, due:due.due, dueSure:due.sure,
+    dueExact:due.exact, duePeriod:due.period, dueSrc:due.src, dueNote:due.note,
+    extra:extra.join("；"), strict:!!sm, strictSrc: sm ? sm[0] : "", flags:flags};
+}
+function ntDueText(due, exact, period){
+  if(!due) return "";
+  var p = String(due).split("T"), d = p[0].split("-"), dt = new Date(+d[0], +d[1]-1, +d[2]);
+  var s = (+d[1]) + "月" + (+d[2]) + "日（" + NT_DOW_NAME[(dt.getDay()+6)%7] + "）";
+  if(exact) return s + p[1].slice(0,5);
+  if(period) return s + period;
+  return s;
+}
+/* 群公告：像人写的短消息；没识别的不编，留「【待补】」给你填 */
+function composeNotice(f){
+  var L = ["【班委通知】"];
+  var greet = (!f.who || f.who === "全班同学" || f.who === "全体同学") ? "各位同学" : "各位同学（本条涉及：" + f.who + "）";
+  var dueTxt = ntDueText(f.due, f.exact, f.period);
+  var when = dueTxt ? "请于" + dueTxt + "前，" : "请";
+  var s;
+  if(!f.what && !f.where && f.raw){
+    L.push(greet + "，转发一则通知：");
+    L.push(String(f.raw).replace(/^\s+|\s+$/g, ""));
+    if(dueTxt) L.push("截止：" + dueTxt + "。");
+    if(f.strict) L.push("逾期不候，请务必按时。");
+    L.push("谢谢配合。"); L.push("——班长 白鑫宇");
+    return L.join("\n");
+  }
+  if(f.mode === "monitor"){
+    s = greet + "，" + when + (f.what ? "把" + f.what + "交给我" : "把材料交给我") +
+        (f.where ? "，由我统一" + (/^(?:发|交给|上传|提交|送)/.test(f.verb || "") ? f.verb : "交到") + f.where : "，由我统一上交") + "。";
+  } else {
+    var v = f.verb || "交到";
+    s = greet + "，" + when + (f.what ? "将" + f.what : "按要求") + (f.where ? v + f.where : (f.what ? "按要求提交" : "完成")) + "。";
+  }
+  if(!dueTxt) s += "截止时间：【待补】。";
+  L.push(s);
+  if(f.extra) L.push("要求：" + String(f.extra).replace(/[。；;]+$/, "") + "。");
+  if(f.strict) L.push("逾期不候，请务必按时。");
+  L.push("谢谢配合。");
+  L.push("——班长 白鑫宇");
+  return L.join("\n");
+}
+/* NT-PARSER-END */
+
+/* ================= 转发通知：界面（v3.1） ================= */
+var nt = {sid:"", lastRaw:"", outDirty:false, colTouched:false, timer:null, added:false};
+var NT_FIELDS = ["ntWhat","ntWho","ntMode","ntWhere","ntStuDate","ntStuTime","ntColDate","ntColTime","ntStrict","ntExtra"];
+var NT_FLAG_OF = {ntWhat:"what", ntWho:"who", ntWhere:"where", ntStuDate:"due", ntStuTime:"due", ntColDate:"collect", ntColTime:"collect"};
+function ntSetFlag(k, on){ var el = $("chk-" + k); if(el) el.hidden = !on; }
+function ntSplitDue(due){ var p = String(due || "").split("T"); return {d:p[0] || "", t:(p[1] || "").slice(0,5)}; }
+function ntFieldDue(dId, tId){
+  var d = $(dId).value, t = normTime($(tId).value);
+  return (d && t) ? d + "T" + t : "";
+}
+function ntReadFields(){
+  var stu = ntFieldDue("ntStuDate","ntStuTime");
+  return {raw:nt.parsed ? nt.parsed.raw : $("ntRaw").value.trim(),
+    what:$("ntWhat").value.trim(), who:$("ntWho").value.trim(), where:$("ntWhere").value.trim(),
+    verb:nt.parsed ? nt.parsed.verb : "", mode:$("ntMode").value,
+    due:stu, exact:nt.exact, period:nt.exact ? "" : nt.period,
+    collect:ntFieldDue("ntColDate","ntColTime"),
+    extra:$("ntExtra").value.trim(), strict:$("ntStrict").value === "1"};
+}
+function ntShowWarn(msg){ var w = $("ntOutWarn"); if(!w) return; w.hidden = !msg; w.textContent = msg || ""; }
+function ntRefreshHints(){
+  var f = ntReadFields(), post = ntPostDue(f);
+  $("ntPostHint").textContent = "约 " + dtShort(new Date(post).getTime()) + " 提醒你去发（待办截止就是这个点）";
+  $("ntColHint").textContent = f.collect ? "截止 " + dtShort(new Date(f.collect).getTime()) + "，提前 1 天和 2 小时各提醒一次" : "先在上面填「我要收齐的时间」";
+}
+function ntGenerate(force){
+  var raw = $("ntRaw").value.trim();
+  if(!raw){ $("ntOutCard").hidden = true; $("ntFieldCard").hidden = true; nt.parsed = null; return false; }
+  if(raw !== nt.lastRaw){ nt.sid = uid(); nt.added = false; nt.colTouched = false; nt.lastRaw = raw; }
+  var p = parseNotice(raw, new Date());
+  nt.parsed = p; nt.exact = p.dueExact; nt.period = p.duePeriod;
+  var sd = ntSplitDue(p.due);
+  $("ntWhat").value = p.what; $("ntWho").value = p.who; $("ntWhere").value = p.where;
+  $("ntMode").value = p.mode; $("ntStrict").value = p.strict ? "1" : "0"; $("ntExtra").value = p.extra;
+  $("ntStuDate").value = sd.d; $("ntStuTime").value = sd.t;
+  $("ntColDate").value = sd.d; $("ntColTime").value = sd.t;
+  for(var k in p.flags) ntSetFlag(k, p.flags[k]);
+  var note = p.dueNote || "";
+  if(p.dueSrc) note = "原文：「" + p.dueSrc + "」" + (note ? "。" + note : "");
+  $("ntDueNote").textContent = note; $("ntDueNote").hidden = !note;
+  $("ntDueNote").classList.toggle("nt-note-warn", !p.dueSure);
+  $("ntModeNote").hidden = p.mode !== "monitor";
+  qsa("#ntFieldCard [aria-invalid]").forEach(function(el){ el.removeAttribute("aria-invalid"); });
+  $("ntOutCard").hidden = false; $("ntFieldCard").hidden = false;
+  if(!nt.outDirty || force){ $("ntOut").value = composeNotice(ntReadFields()); nt.outDirty = false; ntShowWarn(""); }
+  else ntShowWarn("原文改了，但你手改过公告，没有覆盖。需要的话点「用这些字段重写公告」。");
+  ntRefreshHints();
+  return true;
+}
+function ntOnField(id){
+  if(NT_FLAG_OF[id]) ntSetFlag(NT_FLAG_OF[id], false);
+  if(id === "ntStuTime") nt.exact = true;
+  if((id === "ntStuDate" || id === "ntStuTime") && !nt.colTouched){
+    $("ntColDate").value = $("ntStuDate").value; $("ntColTime").value = $("ntStuTime").value;
+  }
+  if(id === "ntColDate" || id === "ntColTime"){ nt.colTouched = true; ntSetFlag("collect", false); }
+  if(id === "ntMode") $("ntModeNote").hidden = $("ntMode").value !== "monitor";
+  if(!nt.outDirty){ $("ntOut").value = composeNotice(ntReadFields()); ntShowWarn(""); }
+  else ntShowWarn("你手改过公告，字段改动没自动写进去。需要的话点「用这些字段重写公告」。");
+  ntRefreshHints();
+}
+function ntRewrite(){
+  if(!nt.parsed && !ntGenerate(true)){ toast("先粘贴通知原文"); return; }
+  if(nt.outDirty && !window.confirm("公告文字你手改过，按字段重写会覆盖这些修改。继续？")) return;
+  $("ntOut").value = composeNotice(ntReadFields()); nt.outDirty = false; ntShowWarn("");
+  toast("已按字段重写公告");
+}
+function ntLogUpsert(){
+  var f = ntReadFields(), out = $("ntOut").value.trim();
+  if(!out) return;
+  if(!nt.sid) nt.sid = uid();
+  var entry = {id:nt.sid, at:new Date().toISOString(), title:f.what || f.raw.slice(0,18) || "通知",
+    due:f.due, broadcast:out, raw:f.raw};
+  state.noticeLog = (state.noticeLog || []).filter(function(x){ return x && x.id !== nt.sid; });
+  state.noticeLog.unshift(entry);
+  if(state.noticeLog.length > 30) state.noticeLog.length = 30;
+  save(); renderNoticeLog();
+}
+function ntCopy(){
+  var out = $("ntOut").value.trim();
+  if(!out){ toast("先粘贴通知，生成群公告"); return; }
+  ntLogUpsert();
+  copyText(out, /【待补/.test(out) ? "已复制。注意公告里还有【待补】没填" : "已复制，去班群粘贴");
+}
+/* 发群提醒：原文一般不写「几点前发群」，所以设在 1 小时后（不晚于同学截止），绝不默认明天 20:00 */
+function ntPostDue(f){
+  var t = Date.now() + 60*60000;
+  t = Math.ceil(t / (5*60000)) * 5*60000;
+  if(f && f.due){ var sd = new Date(localISO(f.due)).getTime(); if(isFinite(sd) && sd > Date.now() && sd < t) t = sd; }
+  var d = new Date(t);
+  return fmt(d) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+function ntAddTodos(){
+  if(!nt.parsed && !ntGenerate(true)){ toast("先粘贴通知原文"); $("ntRaw").focus(); return; }
+  var f = ntReadFields(), out = $("ntOut").value.trim() || composeNotice(f);
+  var wantPost = $("ntPostOn").checked, wantCol = $("ntColOn").checked;
+  if(!wantPost && !wantCol){ toast("两个提醒都关了，没东西可加"); return; }
+  if(wantCol && !f.collect){
+    toast("先填「我要收齐的时间」，或关掉「提醒我收齐」");
+    $("ntColDate").setAttribute("aria-invalid","true"); $("ntColDate").focus(); return;
+  }
+  if(nt.added && !window.confirm("这条通知已经加过待办了，再加一次？")) return;
+  var name = f.what || (f.raw.slice(0,16) + (f.raw.length > 16 ? "…" : "")) || "班长通知";
+  var base = {type:"notice", audience:f.who || "全班", note:f.raw, broadcast:out, what:f.what, noticeId:nt.sid,
+    done:false, createdAt:new Date().toISOString()};
+  var made = [];
+  if(wantPost){
+    var pd = ntPostDue(f);
+    state.todos.push(fill({id:uid(), role:"post", title:"发群：" + name, due:localISO(pd), leadMin:0, alertsMin:[0]}, base));
+    made.push("发群 " + dtShort(new Date(localISO(pd)).getTime()));
+  }
+  if(wantCol){
+    state.todos.push(fill({id:uid(), role:"collect", title:"收齐：" + name, due:localISO(f.collect), leadMin:1440}, base));
+    made.push("收齐 " + dtShort(new Date(localISO(f.collect)).getTime()));
+  }
+  nt.added = true;
+  ntLogUpsert(); save(); renderTodos(); renderSoon(); renderReminders();
+  var guess = wantCol && !$("chk-collect").hidden;
+  toast("已加入待办：" + made.join("、") + (guess ? "。收齐时间是推测的，请先核对时间" : ""));
+}
+function ntClear(){
+  $("ntRaw").value = ""; nt.lastRaw = ""; nt.outDirty = false; nt.parsed = null;
+  $("ntOut").value = ""; ntShowWarn(""); ntGenerate(false); $("ntRaw").focus();
+}
+function ntPaste(){
+  if(!navigator.clipboard || !navigator.clipboard.readText){ toast("这个浏览器不让读剪贴板，长按输入框粘贴"); $("ntRaw").focus(); return; }
+  navigator.clipboard.readText().then(function(s){
+    if(!s || !s.trim()){ toast("剪贴板是空的"); return; }
+    $("ntRaw").value = s.trim(); nt.outDirty = false; ntGenerate(true); ntScrollOut(); toast("已粘贴并生成，看一眼标「请核对」的项");
+  }, function(){ toast("没拿到剪贴板，长按输入框粘贴"); $("ntRaw").focus(); });
+}
+function ntScrollOut(){ var c = $("ntOutCard"); if(c && !c.hidden && window.innerWidth < 1024) try { c.scrollIntoView({behavior:"smooth", block:"start"}); } catch(_){ c.scrollIntoView(); } }
+function ntLogById(id){ var L = state.noticeLog || []; for(var i=0;i<L.length;i++) if(L[i] && L[i].id === id) return L[i]; return null; }
+function ntLoad(id){
+  var e = ntLogById(id); if(!e) return;
+  $("ntRaw").value = e.raw || ""; nt.outDirty = false; nt.lastRaw = "";
+  ntGenerate(true); nt.sid = e.id; nt.added = false;
+  if(e.broadcast){ $("ntOut").value = e.broadcast; nt.outDirty = e.broadcast !== composeNotice(ntReadFields()); }
+  window.scrollTo(0,0); toast("已载入，可以接着改");
+}
+function renderNoticeLog(){
+  var box = $("ntLog"); if(!box) return;
+  var L = (state.noticeLog || []).filter(function(x){ return x && x.broadcast; });
+  if(!L.length){ box.innerHTML = '<li class="empty">还没有转发记录。复制公告或加入待办后会出现在这里。</li>'; return; }
+  box.innerHTML = L.map(function(e){
+    var at = new Date(e.at).getTime();
+    return '<li class="nt-log-item"><div class="nt-log-main"><b>'+esc(e.title)+'</b>'+
+      '<small>'+(e.due ? '截止 '+esc(dateCN(e.due))+' '+esc(String(e.due).slice(11,16)) : '截止未填')+(isFinite(at) ? ' · 转发于 '+dtShort(at) : '')+'</small></div>'+
+      '<div class="nt-log-act"><button type="button" class="btn btn-sm" data-act="nt-log-copy" data-id="'+esc(e.id)+'">复制公告</button>'+
+      '<button type="button" class="btn btn-sm" data-act="nt-log-load" data-id="'+esc(e.id)+'">载入再改</button></div></li>';
+  }).join("");
+}
+/* 今日页入口：有没收齐 / 没发群的通知就显示最近一条，否则一个「转发通知」按钮 */
+function renderNoticeEntry(){
+  var box = $("ntEntry"); if(!box) return;
+  var open = state.todos.filter(function(t){ return t.type === "notice" && !t.done && isFinite(new Date(t.due).getTime()); })
+    .sort(function(a,b){ return new Date(a.due) - new Date(b.due); });
+  if(!open.length){
+    box.innerHTML = '<button type="button" class="nt-entry-btn" data-act="nt-open"><b>转发通知</b><span>粘贴辅导员的消息，生成群公告</span><i aria-hidden="true">›</i></button>';
+    return;
+  }
+  var t = open[0], over = new Date(t.due).getTime() < Date.now();
+  box.innerHTML = '<a class="nt-entry-btn has" href="#/todos/list"><b>'+esc(t.title)+'</b>'+
+    '<span>'+(over ? '<em class="over">已过期</em> · ' : '截止 ')+esc(dateCN(t.due))+' '+esc(timeCN(t.due))+(open.length > 1 ? ' · 还有 '+(open.length-1)+' 条' : '')+'</span><i aria-hidden="true">›</i></a>'+
+    '<button type="button" class="btn btn-sm nt-entry-new" data-act="nt-open">+ 转发通知</button>';
 }
 
 /* ================= LS 风险矩阵（同 v2.2） ================= */
@@ -947,6 +1235,11 @@ function leadText(m){
 function alertPoints(t){
   var ty = typeById(t.type), due = new Date(t.due).getTime(), pts = [];
   if(!isFinite(due)) return pts;
+  if(Array.isArray(t.alertsMin)){   // v3.1「发群」待办：到点就提醒
+    for(var i=0;i<t.alertsMin.length;i++){ var m = +t.alertsMin[i] || 0;
+      pts.push({label: m ? "提前 " + leadText(m) : "到点去发群", at:due - m*60000}); }
+    return pts;
+  }
   pts.push({label:"提前 " + leadText(ty.lead) + "首发", at:due - ty.lead*60000});
   if(ty.extra) pts.push({label:"截止前 " + leadText(ty.extra) + "二次催", at:due - ty.extra*60000});
   return pts;
@@ -956,7 +1249,7 @@ function noticeText(t, second){
   if(t.type === "notice"){
     if(!second && t.broadcast) return t.broadcast;
     return second
-      ? "【提醒】" + t.title + " 将于 " + tm + " 截止，还未完成的同学请抓紧，谢谢～"
+      ? "【提醒】" + (t.what || t.title) + " 将于 " + d + " " + tm + " 截止，还没交的同学请抓紧，谢谢～"
       : "【班委通知】" + t.title + "。请于 " + d + " " + tm + " 前完成，谢谢配合。——班长 白鑫宇";
   }
   return "【待办】" + t.title + "，截止 " + d + " " + tm + (t.audience ? "（" + t.audience + "）" : "") + "。";
@@ -1011,13 +1304,13 @@ function renderTodos(){
   }
   $("tqStat").textContent = all.length
     ? ("未完成 " + open + " 条" + (red ? " · 红 " + red : "") + (orange ? " · 橙 " + orange : "") + " · 共 " + all.length + " 条 · 当前显示 " + list.length + " 条")
-    : "班长通知做成定时待办 + 一键复制群公告，靠日历和通知把你叫起来去发。";
+    : "辅导员的通知在「转发通知」里一键变成群公告，再加「发群」「收齐」两条提醒。";
   setPressed(qsa("#todoQuery [data-tq]"), function(b){
     var k = b.getAttribute("data-tq"); return k === "risk" ? todoQuery.riskSort : k === todoQuery.scope;
   });
   if(!list.length){
     $("todoList").innerHTML = '<li class="empty">' +
-      (all.length ? '这个筛选下没有待办，点「全部」看回来。' : '还没有待办。在「转发班长通知」贴原文一键生成，或者用表单加一条。') + '</li>';
+      (all.length ? '这个筛选下没有待办，点「全部」看回来。' : '还没有待办。在「转发通知」粘贴辅导员的消息，可一键加「发群」「收齐」提醒；或者用表单加一条。') + '</li>';
     return;
   }
   var html = "";
@@ -1108,7 +1401,7 @@ function appendReviewEvent(L){
   L.push("DTEND;TZID=Asia/Shanghai:" + ds + "T211500");
   L.push("RRULE:FREQ=DAILY");
   L.push("SUMMARY:" + escICS("查明天待办 + 翻班级群"));
-  L.push("DESCRIPTION:" + escICS("看明天待办与风险等级；翻一遍班级群有没有新通知，需要转发的用「班长口吻 → 同学口吻」生成文案。"));
+  L.push("DESCRIPTION:" + escICS("看明天待办与风险等级；翻一遍班级群有没有新通知，需要转发的用「转发通知」生成群公告。"));
   L.push("BEGIN:VALARM");
   L.push("ACTION:DISPLAY");
   L.push("DESCRIPTION:" + escICS("查明天待办 + 翻班级群"));
@@ -1132,11 +1425,12 @@ function buildICS(){
     L.push("DTEND;TZID=Asia/Shanghai:" + icsEndFromISO(t.due,15));
     L.push("SUMMARY:" + escICS("[" + ty.label + "] " + t.title));
     L.push("DESCRIPTION:" + escICS(desc));
-    for(var j=0;j<ty.alarms.length;j++){
+    var alarms = Array.isArray(t.alertsMin) ? t.alertsMin.map(function(m){ m = +m || 0; return m ? "-PT" + m + "M" : "PT0S"; }) : ty.alarms;
+    for(var j=0;j<alarms.length;j++){
       L.push("BEGIN:VALARM");
       L.push("ACTION:DISPLAY");
       L.push("DESCRIPTION:" + escICS(j === 0 ? noticeText(t,false) : noticeText(t,true)));
-      L.push("TRIGGER:" + ty.alarms[j]);
+      L.push("TRIGGER:" + alarms[j]);
       L.push("END:VALARM");
     }
     L.push("END:VEVENT");
@@ -1306,6 +1600,7 @@ function importJSON(file){
     state = fill(obj, defaults());
     if(!Array.isArray(state.timetable) || state.timetable.length !== 7) state.timetable = sampleTimetable();
     if(!Array.isArray(state.todos)) state.todos = [];
+    if(!Array.isArray(state.noticeLog)) state.noticeLog = [];
     refreshRefs(); save();
     if(state.meta.pinEnabled) ssSet(UNLOCK_KEY,"1");   // 当前标签页保持解锁，不被导入的口令锁在外面
     renderAll(); toast("导入完成，数据已还原");
@@ -1414,12 +1709,21 @@ function onAction(el){
       if(!window.confirm("删除「" + t.title + "」？")) return;
       state.todos = state.todos.filter(function(x){ return x.id !== id; });
       save(); renderTodos(); renderSoon(); renderReminders(); break;
-    case "cvt-go": runConvert(); break;
-    case "cvt-copy":
-      var out = $("cvtOut").value.trim();
-      if(!out){ toast("先点「解析并生成」"); return; }
-      copyText(out); break;
-    case "cvt-todo": convertToTodo(); break;
+    case "nt-gen":
+      if(!$("ntRaw").value.trim()){ toast("先把通知原文粘贴进来"); $("ntRaw").focus(); return; }
+      if(nt.outDirty && !window.confirm("公告文字你手改过，重新生成会覆盖。继续？")) return;
+      ntGenerate(true); ntScrollOut(); toast("已生成，标「请核对」的项看一眼"); break;
+    case "nt-paste": ntPaste(); break;
+    case "nt-clear": ntClear(); break;
+    case "nt-copy": ntCopy(); break;
+    case "nt-rewrite": ntRewrite(); break;
+    case "nt-todo": ntAddTodos(); break;
+    case "nt-open":
+      go("todos", "notice");
+      setTimeout(function(){ var r = $("ntRaw"); if(r){ try { r.focus({preventScroll:true}); } catch(_){ r.focus(); } } }, 60);
+      break;
+    case "nt-log-copy": var le = ntLogById(id); if(le) copyText(le.broadcast); break;
+    case "nt-log-load": ntLoad(id); break;
     case "ics": exportICS(); break;
     case "ics-copy":
       if(!state.todos.length){ toast("先加一条待办再复制"); return; }
@@ -1474,11 +1778,22 @@ function bindEvents(){
     var id = e.target.id;
     if(id === "ttWeeks") updateWeeksHint();
     else if(id === "tqText"){ todoQuery.text = e.target.value; renderTodos(); }
+    else if(id === "ntRaw"){
+      clearTimeout(nt.timer);
+      nt.timer = setTimeout(function(){ ntGenerate(false); }, 400);
+    }
+    else if(id === "ntOut"){ nt.outDirty = true; }
+    else if(NT_FIELDS.indexOf(id) >= 0 && id !== "ntMode" && id !== "ntStrict") ntOnField(id);
+  });
+  root.addEventListener("paste", function(e){
+    var tg = e.target;
+    if(tg && tg.id === "ntRaw" && (!tg.value.trim() || (tg.selectionStart === 0 && tg.selectionEnd === tg.value.length))) nt.outDirty = false;
   });
   root.addEventListener("change", function(e){
     var el = e.target, id = el.id;
     switch(id){
       case "tdType": updateLeadHint(); break;
+      case "ntMode": case "ntStrict": ntOnField(id); break;
       case "maskToggle": S.maskOn = el.checked; save(); renderAll(); toast(el.checked ? "周六泥膜日已开启（第 3 周起生效）" : "泥膜日已关闭"); break;
       case "vcToggle": S.vcOn = el.checked; save(); renderAll(); toast(el.checked ? "早间流程已加入 VC" : "VC 已从早间流程移除"); break;
       case "dailyReviewIcs":
@@ -1500,7 +1815,7 @@ function renderAll(){
   if(!appReady) return;
   renderHeader(); renderTonight(); renderTimeline(); renderSoon(); renderWeather();
   renderWeek(); renderBuy(); renderStock(); renderGrid();
-  renderTimetable(); renderTodos(); renderReminders(); renderSettings();
+  renderTimetable(); renderTodos(); renderReminders(); renderSettings(); renderNoticeLog();
 }
 function onResume(){
   if(!appReady || document.visibilityState === "hidden") return;
