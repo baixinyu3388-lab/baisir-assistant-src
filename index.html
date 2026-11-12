@@ -16,7 +16,7 @@
 <link rel="manifest" href="manifest.webmanifest?sharecode=XQYKQCQM2D">
 <link rel="icon" href="icon.svg?sharecode=XQYKQCQM2D" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?sharecode=XQYKQCQM2D">
-<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.2.0">
+<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.2.1">
 </head>
 <body>
 
@@ -60,7 +60,7 @@
     <a class="tab" href="#/settings" data-tab="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       <span>设置</span></a>
-    <p class="brand-foot">v3.2 · 数据只在本机</p>
+    <p class="brand-foot">v3.2.1 · 数据只在本机</p>
   </nav>
 
   <main class="main" id="main" tabindex="-1">
@@ -579,7 +579,7 @@
       </div>
 
       <footer class="foot">
-        白sir 的个人助手 · v3.2 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
+        白sir 的个人助手 · v3.2.1 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
         数据仅存本机浏览器 · 天气数据 Open-Meteo (CC BY 4.0)
       </footer>
     </section>
@@ -665,6 +665,11 @@
               <button type="button" data-act="col-filter" data-v="left" aria-pressed="false">未交</button>
               <button type="button" data-act="col-filter" data-v="done" aria-pressed="false">已交</button>
             </div>
+            <div class="seg" role="group" aria-label="按性别" id="colGender" hidden>
+              <button type="button" data-act="col-gender" data-v="" aria-pressed="true">全班</button>
+              <button type="button" data-act="col-gender" data-v="男" aria-pressed="false">男生</button>
+              <button type="button" data-act="col-gender" data-v="女" aria-pressed="false">女生</button>
+            </div>
           </div>
           <p class="col-msg" id="colMsg" role="status" hidden></p>
           <ul class="col-list" id="colList"></ul>
@@ -700,7 +705,7 @@
     <div class="sheet-backdrop" data-act="ro-close"></div>
     <div class="sheet-panel sheet-tall" role="dialog" aria-modal="true" aria-labelledby="roTitle">
       <div class="sheet-head">
-        <div class="sheet-hgroup"><h2 id="roTitle">本班名单</h2><p class="sheet-sub">只存在这台设备 · 所有通知共用</p></div>
+        <div class="sheet-hgroup"><h2 id="roTitle">本班名单</h2><p class="sheet-sub">预填了安全2601，可改可删 · 改动只存在这台设备</p></div>
         <button class="btn btn-icon" type="button" data-act="ro-close" aria-label="关闭">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
@@ -729,6 +734,6 @@
 </div>
 </template>
 
-<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.2.0"></script>
+<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.2.1"></script>
 </body>
 </html>

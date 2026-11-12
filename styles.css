@@ -492,7 +492,9 @@ input[aria-invalid=true]{border-color:var(--danger);box-shadow:0 0 0 4px var(--d
   font-size:16.5px;font-weight:650;color:var(--ink);background:var(--field-bg);box-shadow:inset 0 0 0 1px var(--field-line);transition:background .15s,box-shadow .15s}
 .col-name i{flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;box-shadow:inset 0 0 0 2px var(--tick-line)}
 .col-name svg{width:16px;height:16px;fill:none;stroke:transparent;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
-.col-name span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-name .col-txt{min-width:0;display:flex;flex-direction:column;gap:1px}
+.col-name .col-txt b{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-name .col-txt small{font-size:11px;font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .col-name.on{background:var(--brand-soft);box-shadow:inset 0 0 0 1.5px var(--brand2)}
 .col-name.on i{background:var(--brand2);box-shadow:none}
 .col-name.on svg{stroke:#fff}
@@ -509,7 +511,9 @@ input[aria-invalid=true]{border-color:var(--danger);box-shadow:0 0 0 4px var(--d
 .ro-list{display:grid;gap:6px;margin-top:8px;padding-bottom:8px}
 .ro-list li{display:flex;align-items:center;gap:8px}
 .ro-i{flex:0 0 28px;text-align:right;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ro-list .ro-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .ro-list input.ro-name{min-height:46px;padding:8px 12px;font-size:16px}
+.ro-list .ro-meta{font-size:11px;color:var(--muted);padding:0 4px}
 .ro-del{flex:0 0 40px;width:40px;height:40px;color:var(--danger)}
 .sheet-foot{flex-wrap:wrap}
 @media (min-width:700px){

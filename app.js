@@ -5,7 +5,7 @@
 "use strict";
 
 /* ================= 常量 ================= */
-var VERSION = "3.2.0";
+var VERSION = "3.2.1";
 var KEY = "baiAssistant_v2";          // 不要改：v2.2 的数据就在这里
 var V1KEY = "skinReset_v1";           // 更早的《护肤打卡》页
 var UNLOCK_KEY = "baiUnlocked";       // sessionStorage：当前标签页已解锁
@@ -117,7 +117,9 @@ function defaults(){
     timetableIsSample:false,
     todos:[],
     noticeLog:[],
-    classRoster:[],          // v3.2 本班名单：只存本机
+    classRoster:[],          // 本班名单（姓名字符串）；空名单且未标记种子时会预填安全2601
+    classRosterInfo:{},      // {姓名:{gender,dorm,room}}，只作提示，不影响勾选键
+    classRosterSeed:"",      // 已应用的预填版本，清空名单后不再自动写回
     weatherCache:{data:null,fetchedAt:null},
     settings:{notifEnabled:false,lastIcsExport:null,semesterStart:"2026-09-07",totalWeeks:20,dailyReviewIcs:true}
   };
@@ -142,6 +144,9 @@ function load(){
   if(!Array.isArray(s.todos)) s.todos = [];
   if(!Array.isArray(s.noticeLog)) s.noticeLog = [];
   s.classRoster = cleanRoster(s.classRoster);
+  if(!isObj(s.classRosterInfo)) s.classRosterInfo = {};
+  applyRosterSeed(s);
+  s.classRoster = cleanRoster(s.classRoster);
   if(!s.meta.migratedFrom){
     var v1 = readV1();
     if(v1 && applyV1(s,v1)) s.meta.migratedFrom = "skinReset_v1";
@@ -153,6 +158,74 @@ function cleanRoster(r){
   var out = [], seen = {};
   r.forEach(function(n){ n = String(n == null ? "" : n).trim(); if(n && !seen[n]){ seen[n] = 1; out.push(n); } });
   return out;
+}
+/* 安全2601 宿舍安排表（用户 2026-11-12 提供）。只在名单为空且尚未标记种子时预填；已有名单不覆盖，只给对得上的人补性别/宿舍。 */
+var ROSTER_SEED_ID = "anquan2601-2026";
+var ROSTER_SEED = [
+  {name:"普布扎西", gender:"男", dorm:"升华12栋", room:"630"},
+  {name:"刘天宇", gender:"男", dorm:"升华12栋", room:"631"},
+  {name:"张显子", gender:"男", dorm:"升华12栋", room:""},
+  {name:"何林骏", gender:"男", dorm:"升华12栋", room:""},
+  {name:"甘淦文", gender:"男", dorm:"升华12栋", room:""},
+  {name:"谭明亮", gender:"男", dorm:"升华12栋", room:"632"},
+  {name:"周佳旭", gender:"男", dorm:"升华12栋", room:""},
+  {name:"葛清圆", gender:"男", dorm:"升华12栋", room:""},
+  {name:"阿布拉·库万尼亚孜", gender:"男", dorm:"升华12栋", room:""},
+  {name:"文海辰", gender:"男", dorm:"升华12栋", room:"633"},
+  {name:"刘涵", gender:"男", dorm:"升华12栋", room:""},
+  {name:"何亚男", gender:"男", dorm:"升华12栋", room:""},
+  {name:"伊力哈木·木沙", gender:"男", dorm:"升华12栋", room:""},
+  {name:"杜宸皓", gender:"男", dorm:"升华12栋", room:"634"},
+  {name:"周靖恒", gender:"男", dorm:"升华12栋", room:""},
+  {name:"陈楚柠", gender:"男", dorm:"升华12栋", room:""},
+  {name:"白鑫宇", gender:"男", dorm:"升华12栋", room:""},
+  {name:"王锦晨", gender:"男", dorm:"升华12栋", room:"635"},
+  {name:"欧佳仪", gender:"女", dorm:"升华32栋", room:"721"},
+  {name:"孙梓涵", gender:"女", dorm:"升华32栋", room:""},
+  {name:"冯琰琰", gender:"女", dorm:"升华32栋", room:"722"},
+  {name:"张新晨", gender:"女", dorm:"升华32栋", room:""},
+  {name:"杨懿欢", gender:"女", dorm:"升华32栋", room:""},
+  {name:"庞博艺", gender:"女", dorm:"升华32栋", room:""},
+  {name:"师佳妮", gender:"女", dorm:"升华32栋", room:"723"},
+  {name:"徐若萱", gender:"女", dorm:"升华32栋", room:""}
+];
+function rosterInfo(n){ return (state && isObj(state.classRosterInfo) && state.classRosterInfo[n]) || {}; }
+function rosterInfoLine(n){
+  var i = rosterInfo(n), parts = [];
+  if(i.dorm) parts.push(i.dorm + (i.room ? " " + i.room : ""));
+  else if(i.room) parts.push(i.room);
+  return parts.join(" ");
+}
+function applyRosterSeed(s){
+  if(!s || s.classRosterSeed === ROSTER_SEED_ID) return;
+  if(!isObj(s.classRosterInfo)) s.classRosterInfo = {};
+  var has = (s.classRoster || []).length;
+  if(!has){
+    s.classRoster = ROSTER_SEED.map(function(p){ return p.name; });
+  }
+  ROSTER_SEED.forEach(function(p){
+    if(has && s.classRoster.indexOf(p.name) < 0) return;
+    if(s.classRosterInfo[p.name]) return;
+    s.classRosterInfo[p.name] = {gender:p.gender, dorm:p.dorm, room:p.room || ""};
+  });
+  s.classRosterSeed = ROSTER_SEED_ID;
+}
+function audienceGender(audience){
+  var a = String(audience || "");
+  if(!a || /全班|全体/.test(a)) return "";
+  if(/女生|女同学/.test(a) && !/男生|男同学/.test(a)) return "女";
+  if(/男生|男同学/.test(a) && !/女生|女同学/.test(a)) return "男";
+  return "";
+}
+function rosterByGender(roster, gender){
+  if(!gender) return (roster || []).slice();
+  return (roster || []).filter(function(n){
+    var g = rosterInfo(n).gender;
+    return !g || g === gender;   // 没标性别的人仍显示，避免漏催
+  });
+}
+function rosterHasGender(roster){
+  return (roster || []).some(function(n){ return !!rosterInfo(n).gender; });
 }
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -1286,7 +1359,7 @@ function renderNoticeEntry(){
 }
 
 /* ================= 收齐统计：界面（v3.2，名单只存本机） ================= */
-var col = {kind:"", id:"", filter:"all", lastMsg:""};
+var col = {kind:"", id:"", filter:"all", gender:"", lastMsg:""};
 function isCollectTodo(t){ return !!t && (t.role === "collect" || /^收齐[：:]/.test(String(t.title || ""))); }
 function colTarget(kind, id){
   if(kind === "log") return ntLogById(id);
@@ -1297,7 +1370,8 @@ function colCtx(obj, kind){
   if(!obj) return {};
   var due = obj.stuDue || obj.due || "";
   var what = obj.what || String(obj.title || "").replace(/^(?:收齐|发群)[：:]\s*/, "");
-  return {what:what, due:due ? String(due).slice(0,16) : "", where:obj.where || "", mode:obj.mode || (kind === "todo" && obj.type === "notice" ? "monitor" : "")};
+  var who = obj.who || obj.audience || "";
+  return {what:what, due:due ? String(due).slice(0,16) : "", where:obj.where || "", mode:obj.mode || (kind === "todo" && obj.type === "notice" ? "monitor" : ""), who:who};
 }
 function colDueText(ctx){ return ctx.due && /T\d\d:\d\d/.test(ctx.due) ? ntDueText(ctx.due, true, "") : ""; }
 function colProgressText(obj){
@@ -1310,6 +1384,7 @@ function colOpen(kind, id){
   var obj = colTarget(kind, id);
   if(!obj){ toast("这条记录找不到了"); return; }
   col.kind = kind; col.id = id; col.filter = "all"; col.lastMsg = "";
+  col.gender = audienceGender(colCtx(obj, kind).who);
   if($("colChat")) $("colChat").value = "";
   renderColSheet(); openSheet("colSheet");
 }
@@ -1320,22 +1395,28 @@ function renderColSheet(){
   var ctx = colCtx(obj, col.kind), dueTxt = colDueText(ctx);
   $("colTitle").textContent = "收齐表";
   $("colSub").textContent = (ctx.what || obj.title || "通知") + (dueTxt ? " · 同学截止 " + dueTxt : "");
-  var roster = state.classRoster || [], ck = colChecked(obj);
-  if(!roster.length){
+  var allRoster = state.classRoster || [], ck = colChecked(obj);
+  if(!allRoster.length){
     $("colMain").hidden = true; $("colEmpty").hidden = false; $("colClearBtn").hidden = true;
     return;
   }
   $("colMain").hidden = false; $("colEmpty").hidden = true; $("colClearBtn").hidden = false;
+  var gBox = $("colGender");
+  if(gBox) gBox.hidden = !rosterHasGender(allRoster);
+  setPressed(qsa("#colGender button"), function(b){ return (b.getAttribute("data-v") || "") === (col.gender || ""); });
+  var roster = rosterByGender(allRoster, col.gender);
   var s = colStats(ck, roster);
-  $("colStat").innerHTML = '<b>' + s.done + '</b><span>/ ' + s.total + ' 已交</span>' +
+  var scopeNote = col.gender ? ("（" + col.gender + "生 " + s.total + " 人）") : "";
+  $("colStat").innerHTML = '<b>' + s.done + '</b><span>/ ' + s.total + ' 已交' + scopeNote + '</span>' +
     (s.left ? '<em>未交 ' + s.left + ' 人</em>' : '<em class="ok">全部收齐</em>');
   var bar = $("colBar"); bar.style.width = (s.total ? Math.round(s.done / s.total * 100) : 0) + "%";
   setPressed(qsa("#colFilter button"), function(b){ return b.getAttribute("data-v") === col.filter; });
   var list = roster.filter(function(n){ return col.filter === "all" || (col.filter === "done" ? !!ck[n] : !ck[n]); });
   $("colList").innerHTML = list.length ? list.map(function(n){
-    var on = !!ck[n];
+    var on = !!ck[n], meta = rosterInfoLine(n);
     return '<li><button type="button" class="col-name' + (on ? ' on' : '') + '" data-act="col-tick" data-name="' + esc(n) + '" aria-pressed="' + on + '">' +
-      '<i aria-hidden="true">' + TICK_SVG + '</i><span>' + esc(n) + '</span></button></li>';
+      '<i aria-hidden="true">' + TICK_SVG + '</i><span class="col-txt"><b>' + esc(n) + '</b>' +
+      (meta ? '<small>' + esc(meta) + '</small>' : '') + '</span></button></li>';
   }).join("") : '<li class="empty">' + (col.filter === "left" ? "没有未交的人了。" : "还没人勾上。") + '</li>';
   var orph = colOrphans(ck, roster);
   var on = $("colOrphan");
@@ -1355,8 +1436,8 @@ function colToggle(name){
 function colRefreshOutside(){ renderTodos(); renderNoticeEntry(); renderNoticeLog(); }
 function colCopyLeft(){
   var obj = colTarget(col.kind, col.id); if(!obj) return;
-  var roster = state.classRoster || [], ck = colChecked(obj);
-  if(!roster.length){ toast("先导入名单"); return; }
+  var roster = rosterByGender(state.classRoster || [], col.gender), ck = colChecked(obj);
+  if(!(state.classRoster || []).length){ toast("先导入名单"); return; }
   var left = roster.filter(function(n){ return !ck[n]; });
   if(!left.length){ toast("全员已交，没有要催的"); return; }
   var ctx = colCtx(obj, col.kind);
@@ -1405,7 +1486,7 @@ function renderRosterAll(){
   if(!appReady) return;
   var n = (state.classRoster || []).length;
   var t = n ? "已导入 " + n + " 人" : "还没导入";
-  if($("rosterState")) $("rosterState").textContent = "本班名单：" + t + " · 只存在这台设备";
+  if($("rosterState")) $("rosterState").textContent = "本班名单：" + t + " · 改动只存在这台设备";
   if($("ntRosterState")) $("ntRosterState").textContent = n ? "本班名单 " + n + " 人，收齐待办里点「收齐表」逐人勾" : "还没导入本班名单，导入后收齐待办能逐人勾、复制未交";
   renderRosterSheet(); renderColSheet(); colRefreshOutside();
 }
@@ -1414,7 +1495,10 @@ function renderRosterSheet(){
   var r = state.classRoster || [];
   $("rosterCount").textContent = r.length ? "共 " + r.length + " 人。改名会带着已交记录走；删掉的人，已交记录仍保留在数据里。" : "还没有名单。从班级群或教务系统复制名单粘贴到上面。";
   box.innerHTML = r.map(function(n, i){
-    return '<li><span class="ro-i">' + (i+1) + '</span><input class="ro-name" data-idx="' + i + '" value="' + esc(n) + '" aria-label="第 ' + (i+1) + ' 人姓名" autocomplete="off">' +
+    var meta = rosterInfoLine(n), g = rosterInfo(n).gender;
+    var hint = [g, meta].filter(Boolean).join(" · ");
+    return '<li><span class="ro-i">' + (i+1) + '</span><div class="ro-main"><input class="ro-name" data-idx="' + i + '" value="' + esc(n) + '" aria-label="第 ' + (i+1) + ' 人姓名" autocomplete="off">' +
+      (hint ? '<small class="ro-meta">' + esc(hint) + '</small>' : '') + '</div>' +
       '<button type="button" class="btn btn-icon btn-sm ro-del" data-act="ro-del" data-idx="' + i + '" aria-label="删除 ' + esc(n) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></li>';
   }).join("");
   $("rosterClear").hidden = !r.length;
@@ -1438,6 +1522,10 @@ function rosterRename(idx, val){
   if(nv === old){ renderRosterSheet(); return; }
   var dup = r.indexOf(nv) >= 0;
   colAllTargets().forEach(function(o){ var ck = o.collectChecked; if(ck[old]){ ck[nv] = true; delete ck[old]; } });
+  if(state.classRosterInfo && state.classRosterInfo[old]){
+    if(!state.classRosterInfo[nv]) state.classRosterInfo[nv] = state.classRosterInfo[old];
+    delete state.classRosterInfo[old];
+  }
   if(dup) r.splice(idx, 1); else r[idx] = nv;
   rosterSet(r);
   toast(dup ? "「" + nv + "」已在名单里，已合并（勾选一并带过去）" : "已改为「" + nv + "」，已交记录跟着改了");
@@ -1887,6 +1975,9 @@ function importJSON(file){
     if(!Array.isArray(state.todos)) state.todos = [];
     if(!Array.isArray(state.noticeLog)) state.noticeLog = [];
     state.classRoster = cleanRoster(state.classRoster);
+    if(!isObj(state.classRosterInfo)) state.classRosterInfo = {};
+    applyRosterSeed(state);
+    state.classRoster = cleanRoster(state.classRoster);
     refreshRefs(); save();
     if(state.meta.pinEnabled) ssSet(UNLOCK_KEY,"1");   // 当前标签页保持解锁，不被导入的口令锁在外面
     renderAll(); toast("导入完成，数据已还原");
@@ -2015,6 +2106,7 @@ function onAction(el){
     case "col-close": closeSheet("colSheet"); break;
     case "col-tick": colToggle(el.getAttribute("data-name")); break;
     case "col-filter": col.filter = el.getAttribute("data-v"); renderColSheet(); break;
+    case "col-gender": col.gender = el.getAttribute("data-v") || ""; renderColSheet(); break;
     case "col-copy": colCopyLeft(); break;
     case "col-chat": colFromChat(); break;
     case "col-chat-paste":
