@@ -5,7 +5,7 @@
 "use strict";
 
 /* ================= 常量 ================= */
-var VERSION = "3.3.0";
+var VERSION = "3.3.1";
 var KEY = "baiAssistant_v2";          // 不要改：v2.2 的数据就在这里
 var V1KEY = "skinReset_v1";           // 更早的《护肤打卡》页
 var UNLOCK_KEY = "baiUnlocked";       // sessionStorage：当前标签页已解锁
@@ -118,7 +118,7 @@ function defaults(){
     todos:[],
     noticeLog:[],
     classRoster:[],          // 本班名单（姓名字符串）；空名单且未标记种子时会预填安全2601
-    classRosterInfo:{},      // {姓名:{gender,dorm,room}}，只作提示，不影响勾选键
+    classRosterInfo:{},      // {姓名:{gender,sid}}，只作提示，不影响勾选键
     classRosterSeed:"",      // 已应用的预填版本，清空名单后不再自动写回
     weatherCache:{data:null,fetchedAt:null},
     settings:{notifEnabled:false,lastIcsExport:null,semesterStart:"2026-09-07",totalWeeks:20,dailyReviewIcs:true}
@@ -159,54 +159,66 @@ function cleanRoster(r){
   r.forEach(function(n){ n = String(n == null ? "" : n).trim(); if(n && !seen[n]){ seen[n] = 1; out.push(n); } });
   return out;
 }
-/* 安全2601 宿舍安排表（用户 2026-11-12 提供）。只在名单为空且尚未标记种子时预填；已有名单不覆盖，只给对得上的人补性别/宿舍。 */
-var ROSTER_SEED_ID = "anquan2601-2026";
+/* 安全2601 名单。学号表由用户 2026-11-13 提供；只写入姓名、性别、学号，不写电话等。
+   名单为空且从未标记种子时才预填；已经种过（含旧宿舍版）又被清空的，不再写回。
+   已有完整 26 人名单会改按学号排序，并把宿舍换成学号；自定义增删的名单只给对得上的人补学号，不改顺序。 */
+var ROSTER_SEED_ID = "anquan2601-2026-sid";
 var ROSTER_SEED = [
-  {name:"普布扎西", gender:"男", dorm:"升华12栋", room:"630"},
-  {name:"刘天宇", gender:"男", dorm:"升华12栋", room:"631"},
-  {name:"张显子", gender:"男", dorm:"升华12栋", room:""},
-  {name:"何林骏", gender:"男", dorm:"升华12栋", room:""},
-  {name:"甘淦文", gender:"男", dorm:"升华12栋", room:""},
-  {name:"谭明亮", gender:"男", dorm:"升华12栋", room:"632"},
-  {name:"周佳旭", gender:"男", dorm:"升华12栋", room:""},
-  {name:"葛清圆", gender:"男", dorm:"升华12栋", room:""},
-  {name:"阿布拉·库万尼亚孜", gender:"男", dorm:"升华12栋", room:""},
-  {name:"文海辰", gender:"男", dorm:"升华12栋", room:"633"},
-  {name:"刘涵", gender:"男", dorm:"升华12栋", room:""},
-  {name:"何亚男", gender:"男", dorm:"升华12栋", room:""},
-  {name:"伊力哈木·木沙", gender:"男", dorm:"升华12栋", room:""},
-  {name:"杜宸皓", gender:"男", dorm:"升华12栋", room:"634"},
-  {name:"周靖恒", gender:"男", dorm:"升华12栋", room:""},
-  {name:"陈楚柠", gender:"男", dorm:"升华12栋", room:""},
-  {name:"白鑫宇", gender:"男", dorm:"升华12栋", room:""},
-  {name:"王锦晨", gender:"男", dorm:"升华12栋", room:"635"},
-  {name:"欧佳仪", gender:"女", dorm:"升华32栋", room:"721"},
-  {name:"孙梓涵", gender:"女", dorm:"升华32栋", room:""},
-  {name:"冯琰琰", gender:"女", dorm:"升华32栋", room:"722"},
-  {name:"张新晨", gender:"女", dorm:"升华32栋", room:""},
-  {name:"杨懿欢", gender:"女", dorm:"升华32栋", room:""},
-  {name:"庞博艺", gender:"女", dorm:"升华32栋", room:""},
-  {name:"师佳妮", gender:"女", dorm:"升华32栋", room:"723"},
-  {name:"徐若萱", gender:"女", dorm:"升华32栋", room:""}
+  {name:"杜宸皓", gender:"男", sid:"0203260101"},
+  {name:"欧佳仪", gender:"女", sid:"0203260102"},
+  {name:"周靖恒", gender:"男", sid:"0203260103"},
+  {name:"刘天宇", gender:"男", sid:"0203260104"},
+  {name:"冯琰琰", gender:"女", sid:"0203260105"},
+  {name:"普布扎西", gender:"男", sid:"0203260106"},
+  {name:"孙梓涵", gender:"女", sid:"0203260107"},
+  {name:"张显子", gender:"男", sid:"0203260108"},
+  {name:"张新晨", gender:"女", sid:"0203260109"},
+  {name:"何林骏", gender:"男", sid:"0203260110"},
+  {name:"谭明亮", gender:"男", sid:"0203260111"},
+  {name:"文海辰", gender:"男", sid:"0203260112"},
+  {name:"杨懿欢", gender:"女", sid:"0203260113"},
+  {name:"甘淦文", gender:"男", sid:"0203260114"},
+  {name:"庞博艺", gender:"女", sid:"0203260115"},
+  {name:"周佳旭", gender:"男", sid:"0203260116"},
+  {name:"葛清圆", gender:"男", sid:"0203260117"},
+  {name:"刘涵", gender:"男", sid:"0203260118"},
+  {name:"陈楚柠", gender:"男", sid:"0203260119"},
+  {name:"师佳妮", gender:"女", sid:"0203260120"},
+  {name:"何亚男", gender:"男", sid:"0203260121"},
+  {name:"徐若萱", gender:"女", sid:"0203260122"},
+  {name:"白鑫宇", gender:"男", sid:"0203260123"},
+  {name:"王锦晨", gender:"男", sid:"0203260124"},
+  {name:"阿布拉·库万尼亚孜", gender:"男", sid:"0203260125"},
+  {name:"伊力哈木·木沙", gender:"男", sid:"0203260126"}
 ];
 function rosterInfo(n){ return (state && isObj(state.classRosterInfo) && state.classRosterInfo[n]) || {}; }
 function rosterInfoLine(n){
-  var i = rosterInfo(n), parts = [];
-  if(i.dorm) parts.push(i.dorm + (i.room ? " " + i.room : ""));
-  else if(i.room) parts.push(i.room);
-  return parts.join(" ");
+  var sid = rosterInfo(n).sid;
+  return sid ? String(sid) : "";
+}
+function rosterSameSet(a, b){
+  if(!a || !b || a.length !== b.length) return false;
+  var seen = {};
+  a.forEach(function(n){ seen[n] = 1; });
+  return b.every(function(n){ return !!seen[n]; });
 }
 function applyRosterSeed(s){
   if(!s || s.classRosterSeed === ROSTER_SEED_ID) return;
   if(!isObj(s.classRosterInfo)) s.classRosterInfo = {};
+  var prev = s.classRosterSeed || "";
   var has = (s.classRoster || []).length;
-  if(!has){
+  if(!has && !prev){
     s.classRoster = ROSTER_SEED.map(function(p){ return p.name; });
+    has = s.classRoster.length;
+  }
+  var seedNames = ROSTER_SEED.map(function(p){ return p.name; });
+  if(has && rosterSameSet(s.classRoster, seedNames)){
+    s.classRoster = seedNames.slice();
   }
   ROSTER_SEED.forEach(function(p){
     if(has && s.classRoster.indexOf(p.name) < 0) return;
-    if(s.classRosterInfo[p.name]) return;
-    s.classRosterInfo[p.name] = {gender:p.gender, dorm:p.dorm, room:p.room || ""};
+    var cur = s.classRosterInfo[p.name] || {};
+    s.classRosterInfo[p.name] = {gender: cur.gender || p.gender, sid: p.sid};
   });
   s.classRosterSeed = ROSTER_SEED_ID;
 }

@@ -5,7 +5,7 @@
  * - 激活时删除所有旧缓存（v2 的 baiAssistant-shell-*），避免旧版卡住。
  * - WorkBuddy 网关要求带 ?sharecode=，所以预缓存 URL 带上它；匹配时 ignoreSearch。
  */
-var VERSION = "3.3.0";
+var VERSION = "3.3.1";
 var CACHE = "baisir-v3-shell-" + VERSION;
 var Q = "?sharecode=XQYKQCQM2D";
 var APP_SHELL = [
