@@ -16,7 +16,7 @@
 <link rel="manifest" href="manifest.webmanifest?sharecode=XQYKQCQM2D">
 <link rel="icon" href="icon.svg?sharecode=XQYKQCQM2D" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?sharecode=XQYKQCQM2D">
-<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.2.1">
+<link rel="stylesheet" href="styles.css?sharecode=XQYKQCQM2D&amp;v=3.3.0">
 </head>
 <body>
 
@@ -60,7 +60,7 @@
     <a class="tab" href="#/settings" data-tab="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       <span>设置</span></a>
-    <p class="brand-foot">v3.2.1 · 数据只在本机</p>
+    <p class="brand-foot">v3.3.0 · 数据只在本机</p>
   </nav>
 
   <main class="main" id="main" tabindex="-1">
@@ -82,6 +82,7 @@
         </div>
       </header>
       <div class="chip-row" id="todayChips"></div>
+      <article class="card col-dash" id="colDash" hidden aria-labelledby="hColDash"></article>
       <div class="nt-entry" id="ntEntry"></div>
 
       <div class="today-grid">
@@ -216,6 +217,10 @@
               <label class="field"><span>截止时间（24 小时）</span><input class="t24" id="tdTime" inputmode="numeric" placeholder="20:00" maxlength="5" value="20:00" required></label>
             </div>
             <p class="hint" id="tdLeadHint">—</p>
+            <label class="switch-row">
+              <input type="checkbox" id="tdCollect">
+              <span><b>逐人核对已交</b><small>建完会打开核对页，打勾就能看到已交、未交人数</small></span>
+            </label>
             <button class="btn btn-primary btn-block" type="submit">添加待办</button>
           </form>
 
@@ -579,7 +584,7 @@
       </div>
 
       <footer class="foot">
-        白sir 的个人助手 · v3.2.1 · 2026-11-12 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
+        白sir 的个人助手 · v3.3.0 · 2026-11-13 · 基于 WorkBuddy 上「拖把 给白sir 做的」v2.2 重做<br>
         数据仅存本机浏览器 · 天气数据 Open-Meteo (CC BY 4.0)
       </footer>
     </section>
@@ -640,7 +645,7 @@
     <div class="sheet-backdrop" data-act="col-close"></div>
     <div class="sheet-panel sheet-tall" role="dialog" aria-modal="true" aria-labelledby="colTitle">
       <div class="sheet-head">
-        <div class="sheet-hgroup"><h2 id="colTitle">收齐表</h2><p class="sheet-sub" id="colSub">—</p></div>
+        <div class="sheet-hgroup"><h2 id="colTitle">核对收齐</h2><p class="sheet-sub" id="colSub">—</p></div>
         <button class="btn btn-icon" type="button" data-act="col-close" aria-label="关闭">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
@@ -734,6 +739,6 @@
 </div>
 </template>
 
-<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.2.1"></script>
+<script src="app.js?sharecode=XQYKQCQM2D&amp;v=3.3.0"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 "use strict";
 
 /* ================= 常量 ================= */
-var VERSION = "3.2.1";
+var VERSION = "3.3.0";
 var KEY = "baiAssistant_v2";          // 不要改：v2.2 的数据就在这里
 var V1KEY = "skinReset_v1";           // 更早的《护肤打卡》页
 var UNLOCK_KEY = "baiUnlocked";       // sessionStorage：当前标签页已解锁
@@ -226,6 +226,39 @@ function rosterByGender(roster, gender){
 }
 function rosterHasGender(roster){
   return (roster || []).some(function(n){ return !!rosterInfo(n).gender; });
+}
+function colAudienceGender(obj){
+  return audienceGender(obj && (obj.who || obj.audience) || "");
+}
+function colViewRoster(obj, gender){
+  var g = gender == null ? colAudienceGender(obj) : gender;
+  return rosterByGender(state.classRoster || [], g);
+}
+function colViewStats(obj, gender){
+  var r = colViewRoster(obj, gender);
+  if(!r.length) return null;
+  return colStats(colChecked(obj), r);
+}
+/* 已交 / 未交 / 共，三个大数，不用自己数 */
+function colNumsHtml(s, cls){
+  if(!s) return '<span class="col-nums ' + (cls || "") + ' empty">还没有名单</span>';
+  return '<span class="col-nums ' + (cls || "") + '">' +
+    '<span><em>' + s.done + '</em>已交</span>' +
+    '<span class="' + (s.left ? "left" : "ok") + '"><em>' + s.left + '</em>未交</span>' +
+    '<span><em>' + s.total + '</em>共</span></span>';
+}
+function colBarPct(s){ return s && s.total ? Math.round(s.done / s.total * 100) : 0; }
+function canStartCollect(t){
+  if(!t || t.done) return false;
+  if(isCollectTodo(t)) return false;
+  if(t.role === "post" || /^发群[：:]/.test(String(t.title || ""))) return false;
+  if(t.type === "skin") return false;
+  return true;
+}
+function shouldSuggestCollect(title, type){
+  if(type === "skin" || type === "meet") return false;
+  if(type === "notice" || type === "ddl" || type === "pay") return true;
+  return /收|交|作业|材料|表格|班费|问卷|名单|截图|填写/.test(String(title || ""));
 }
 function save(){
   try { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -666,6 +699,7 @@ function renderRing(rows){
 }
 function renderSoon(){
   renderNoticeEntry();
+  renderColDash();
   var now = Date.now(), lim = now + 48*3600000;
   var list = state.todos.filter(function(t){ var d = new Date(t.due).getTime(); return !t.done && isFinite(d) && d <= lim; })
     .sort(function(a,b){ return new Date(a.due) - new Date(b.due); }).slice(0,4);
@@ -674,9 +708,33 @@ function renderSoon(){
   if(!list.length){ $("soonList").innerHTML = '<li class="empty">48 小时内没有待办。每天 21:00 记得看一眼明天。</li>'; return; }
   $("soonList").innerHTML = list.map(function(t){
     var rk = riskOf(t, now), over = new Date(t.due).getTime() < now;
+    var s = isCollectTodo(t) ? colViewStats(t) : null;
+    var meta = esc(typeById(t.type).label)+' · '+(over?'已过期 · ':'')+esc(dateCN(t.due))+' '+esc(timeCN(t.due));
+    if(s) meta += ' · 已交 '+s.done+' / 未交 '+s.left;
+    if(isCollectTodo(t)){
+      return '<li><span class="rdot '+rk.level+'" aria-hidden="true"></span><button type="button" class="soon-link" data-act="col-open" data-kind="todo" data-id="'+esc(t.id)+'"><b>'+esc(t.title)+'</b>'+
+        '<small>'+meta+'</small></button></li>';
+    }
     return '<li><span class="rdot '+rk.level+'" aria-hidden="true"></span><a href="#/todos/list"><b>'+esc(t.title)+'</b>'+
-      '<small>'+esc(typeById(t.type).label)+' · '+(over?'已过期 · ':'')+esc(dateCN(t.due))+' '+esc(timeCN(t.due))+'</small></a></li>';
+      '<small>'+meta+'</small></a></li>';
   }).join("");
+}
+function renderColDash(){
+  var box = $("colDash"); if(!box) return;
+  var list = (state.todos || []).filter(function(t){ return isCollectTodo(t) && !t.done; })
+    .sort(function(a,b){ return new Date(a.due) - new Date(b.due); });
+  if(!list.length){ box.hidden = true; box.innerHTML = ""; return; }
+  box.hidden = false;
+  var items = list.map(function(t){
+    var s = colViewStats(t);
+    var due = (t.due ? "截止 " + dateCN(t.due) + " " + timeCN(t.due) : "");
+    return '<button type="button" class="col-dash-item" data-act="col-open" data-kind="todo" data-id="' + esc(t.id) + '">' +
+      '<b>' + esc(t.title) + '</b>' +
+      colNumsHtml(s, "lg") +
+      '<i class="col-dash-bar" aria-hidden="true"><i style="width:' + colBarPct(s) + '%"></i></i>' +
+      '<span class="col-hint">' + (due ? esc(due) + " · " : "") + '点进去打勾核对，已交未交不用自己数</span></button>';
+  }).join("");
+  box.innerHTML = '<div class="block-head"><h2 id="hColDash">收齐统计</h2><span class="muted">' + list.length + ' 条进行中</span></div>' + items;
 }
 
 /* ================= 渲染：护肤 ================= */
@@ -1278,14 +1336,21 @@ function ntAddTodos(){
     state.todos.push(fill({id:uid(), role:"post", title:"发群：" + name, due:localISO(pd), leadMin:0, alertsMin:[0]}, base));
     made.push("发群 " + dtShort(new Date(localISO(pd)).getTime()));
   }
+  var colTodo = null;
   if(wantCol){
-    state.todos.push(fill({id:uid(), role:"collect", title:"收齐：" + name, due:localISO(f.collect), leadMin:1440, collectChecked:{}}, base));
+    colTodo = fill({id:uid(), role:"collect", title:"收齐：" + name, due:localISO(f.collect), leadMin:1440, collectChecked:{}}, base);
+    state.todos.push(colTodo);
     made.push("收齐 " + dtShort(new Date(localISO(f.collect)).getTime()));
   }
   nt.added = true;
   ntLogUpsert(); save(); renderTodos(); renderSoon(); renderReminders();
   var guess = wantCol && !$("chk-collect").hidden;
-  toast("已加入待办：" + made.join("、") + (guess ? "。收齐时间是推测的，请先核对时间" : (wantCol && !(state.classRoster || []).length ? "。导入本班名单后可逐人勾已交" : "")));
+  if(colTodo){
+    toast("已加入待办：" + made.join("、") + (guess ? "。收齐时间是推测的，请先核对时间。" : "。") + "现在打开核对页，打勾即可看到已交、未交人数");
+    colOpen("todo", colTodo.id);
+  } else {
+    toast("已加入待办：" + made.join("、"));
+  }
 }
 function ntClear(){
   $("ntRaw").value = ""; nt.lastRaw = ""; nt.outDirty = false; nt.parsed = null;
@@ -1313,8 +1378,8 @@ function renderNoticeLog(){
   if(!L.length){ box.innerHTML = '<li class="empty">还没有转发记录。复制公告或加入待办后会出现在这里。</li>'; return; }
   box.innerHTML = L.map(function(e){
     var at = new Date(e.at).getTime(), ct = ntCollectTodoOf(e.id);
-    var colBtn = ct ? '<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="todo" data-id="'+esc(ct.id)+'">收齐表 · '+esc(colProgressText(ct))+'</button>'
-      : '<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="log" data-id="'+esc(e.id)+'">收齐表'+(isObj(e.collectChecked) && Object.keys(e.collectChecked).length ? ' · '+esc(colProgressText(e)) : '')+'</button>';
+    var colBtn = ct ? '<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="todo" data-id="'+esc(ct.id)+'">核对 · '+esc(colProgressText(ct))+'</button>'
+      : '<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="log" data-id="'+esc(e.id)+'">核对'+(isObj(e.collectChecked) && Object.keys(e.collectChecked).length ? ' · '+esc(colProgressText(e)) : '')+'</button>';
     return '<li class="nt-log-item"><div class="nt-log-main"><b>'+esc(e.title)+'</b>'+
       '<small>'+(e.due ? '截止 '+esc(dateCN(e.due))+' '+esc(String(e.due).slice(11,16)) : '截止未填')+(isFinite(at) ? ' · 转发于 '+dtShort(at) : '')+'</small></div>'+
       '<div class="nt-log-act">'+colBtn+'<button type="button" class="btn btn-sm" data-act="nt-log-copy" data-id="'+esc(e.id)+'">复制公告</button>'+
@@ -1332,10 +1397,10 @@ function ntEntryRow(t, extra){
   var over = new Date(t.due).getTime() < Date.now();
   var when = (over ? '<em class="over">已过期</em> · ' : '截止 ') + esc(dateCN(t.due)) + ' ' + esc(timeCN(t.due));
   if(isCollectTodo(t)){
-    var r = state.classRoster || [], s = colStats(colChecked(t), r);
-    var prog = r.length ? '<em class="nt-prog' + (s.left ? '' : ' ok') + '">' + esc(colProgressText(t)) + '</em>' : '<em class="nt-prog none">还没导入名单</em>';
-    return '<button type="button" class="nt-entry-btn has" data-act="col-open" data-kind="todo" data-id="' + esc(t.id) + '"><b>' + esc(t.title) + '</b>' +
-      '<span>' + prog + ' · ' + when + extra + '</span><i aria-hidden="true">›</i></button>';
+    var s = colViewStats(t);
+    var prog = s ? colNumsHtml(s, "sm") : '<em class="nt-prog none">还没有名单</em>';
+    return '<button type="button" class="nt-entry-btn has col-entry" data-act="col-open" data-kind="todo" data-id="' + esc(t.id) + '"><b>' + esc(t.title) + '</b>' +
+      prog + '<span>' + when + extra + ' · 去打勾核对</span><i aria-hidden="true">›</i></button>';
   }
   return '<a class="nt-entry-btn has" href="#/todos/list"><b>' + esc(t.title) + '</b><span>' + when + extra + '</span><i aria-hidden="true">›</i></a>';
 }
@@ -1393,7 +1458,7 @@ function renderColSheet(){
   var obj = colTarget(col.kind, col.id);
   if(!obj){ closeSheet("colSheet"); return; }
   var ctx = colCtx(obj, col.kind), dueTxt = colDueText(ctx);
-  $("colTitle").textContent = "收齐表";
+  $("colTitle").textContent = "核对收齐";
   $("colSub").textContent = (ctx.what || obj.title || "通知") + (dueTxt ? " · 同学截止 " + dueTxt : "");
   var allRoster = state.classRoster || [], ck = colChecked(obj);
   if(!allRoster.length){
@@ -1406,10 +1471,11 @@ function renderColSheet(){
   setPressed(qsa("#colGender button"), function(b){ return (b.getAttribute("data-v") || "") === (col.gender || ""); });
   var roster = rosterByGender(allRoster, col.gender);
   var s = colStats(ck, roster);
-  var scopeNote = col.gender ? ("（" + col.gender + "生 " + s.total + " 人）") : "";
-  $("colStat").innerHTML = '<b>' + s.done + '</b><span>/ ' + s.total + ' 已交' + scopeNote + '</span>' +
-    (s.left ? '<em>未交 ' + s.left + ' 人</em>' : '<em class="ok">全部收齐</em>');
-  var bar = $("colBar"); bar.style.width = (s.total ? Math.round(s.done / s.total * 100) : 0) + "%";
+  var scopeNote = col.gender ? (col.gender + "生范围") : "";
+  $("colStat").innerHTML = colNumsHtml(s, "lg") +
+    (scopeNote ? '<small class="col-scope">' + scopeNote + '</small>' : "") +
+    (s.left ? "" : '<em class="ok">全部收齐</em>');
+  var bar = $("colBar"); bar.style.width = colBarPct(s) + "%";
   setPressed(qsa("#colFilter button"), function(b){ return b.getAttribute("data-v") === col.filter; });
   var list = roster.filter(function(n){ return col.filter === "all" || (col.filter === "done" ? !!ck[n] : !ck[n]); });
   $("colList").innerHTML = list.length ? list.map(function(n){
@@ -1433,7 +1499,7 @@ function colToggle(name){
   save(); renderColSheet(); colRefreshOutside();
   if(navigator.vibrate) try { navigator.vibrate(6); } catch(_){}
 }
-function colRefreshOutside(){ renderTodos(); renderNoticeEntry(); renderNoticeLog(); }
+function colRefreshOutside(){ renderTodos(); renderSoon(); renderNoticeLog(); }
 function colCopyLeft(){
   var obj = colTarget(col.kind, col.id); if(!obj) return;
   var roster = rosterByGender(state.classRoster || [], col.gender), ck = colChecked(obj);
@@ -1702,8 +1768,10 @@ function renderTodos(){
         (chips ? '<div class="chips">'+chips+'</div>' : '')+
         '<details class="mini-details"><summary>管控措施与预测后果 · L='+rk.L+' × S='+rk.S+'</summary>'+
           '<p><b>管控措施：</b>'+esc(rk.meta.ctrl)+'</p><p>'+esc(predictConsequence(t,rk))+'</p></details>'+
+        (isCollectTodo(t)?'<button type="button" class="col-mini" data-act="col-open" data-kind="todo" data-id="'+esc(t.id)+'">'+
+            colNumsHtml(colViewStats(t))+'<span class="col-hint">点这里打勾核对，已交未交不用自己数</span></button>':'')+
         '<div class="todo-act">'+
-          (isCollectTodo(t)?'<button type="button" class="btn btn-sm btn-col" data-act="col-open" data-kind="todo" data-id="'+esc(t.id)+'">收齐表 · '+esc(colProgressText(t))+'</button>':'')+
+          (canStartCollect(t)?'<button type="button" class="btn btn-sm btn-col" data-act="col-start" data-id="'+esc(t.id)+'">开始核对已交</button>':'')+
           '<button type="button" class="btn btn-sm" data-act="td-copy" data-id="'+esc(t.id)+'">复制群公告</button>'+
           (t.type==="notice"?'<button type="button" class="btn btn-sm" data-act="td-copy2" data-id="'+esc(t.id)+'">复制催办</button>':'')+
           '<button type="button" class="btn btn-sm btn-danger-ghost" data-act="td-del" data-id="'+esc(t.id)+'">删除</button>'+
@@ -1730,10 +1798,36 @@ function addTodo(){
   if(!tm){ toast("时间用 24 小时制，例如 20:00"); $("tdTime").focus(); return; }
   $("tdTime").value = tm;
   var ty = typeById($("tdType").value);
-  state.todos.push({id:uid(), title:title, type:ty.id, due:localISO(d + "T" + tm), leadMin:ty.lead,
-    audience:$("tdAudience").value.trim(), note:"", done:false, createdAt:new Date().toISOString()});
-  $("tdTitle").value = ""; save(); renderTodos(); renderSoon(); renderReminders();
-  toast("已加待办；导出 .ics 才会进系统日历");
+  var wantCol = $("tdCollect") && $("tdCollect").checked;
+  var t = {id:uid(), title:title, type:ty.id, due:localISO(d + "T" + tm), leadMin:ty.lead,
+    audience:$("tdAudience").value.trim(), note:"", done:false, createdAt:new Date().toISOString()};
+  if(wantCol){ t.role = "collect"; t.collectChecked = {}; t.who = t.audience; t.what = title; }
+  state.todos.push(t);
+  $("tdTitle").value = "";
+  if($("tdCollect")){ tdCollectTouched = false; suggestTdCollect(); }
+  save(); renderTodos(); renderSoon(); renderReminders();
+  if(wantCol){
+    toast("待办已建，打开核对页：打勾即可看到已交、未交人数");
+    colOpen("todo", t.id);
+  } else {
+    toast("已加待办；导出 .ics 才会进系统日历");
+  }
+}
+var tdCollectTouched = false;
+function suggestTdCollect(){
+  var el = $("tdCollect"); if(!el) return;
+  if(tdCollectTouched) return;
+  el.checked = shouldSuggestCollect(($("tdTitle") && $("tdTitle").value) || "", ($("tdType") && $("tdType").value) || "");
+}
+function colStart(id){
+  var t = todoById(id); if(!t) return;
+  t.role = "collect";
+  if(!isObj(t.collectChecked)) t.collectChecked = {};
+  if(!t.what) t.what = String(t.title || "").replace(/^(?:收齐|发群)[：:]\s*/, "");
+  if(!t.who && t.audience) t.who = t.audience;
+  save(); renderTodos(); renderSoon();
+  colOpen("todo", t.id);
+  toast("已打开核对页，打勾即可统计已交、未交");
 }
 
 /* ================= .ics 导出（同 v2.2） ================= */
@@ -2103,6 +2197,7 @@ function onAction(el){
     case "nt-log-load": ntLoad(id); break;
     /* 收齐表 / 本班名单（v3.2） */
     case "col-open": colOpen(el.getAttribute("data-kind") || "todo", id); break;
+    case "col-start": colStart(id); break;
     case "col-close": closeSheet("colSheet"); break;
     case "col-tick": colToggle(el.getAttribute("data-name")); break;
     case "col-filter": col.filter = el.getAttribute("data-v"); renderColSheet(); break;
@@ -2237,6 +2332,10 @@ function syncThemeColor(){
 }
 function boot(){
   state = load(); refreshRefs(); save();   // 落盘一次性迁移结果
+  if($("tdTitle")) $("tdTitle").addEventListener("input", suggestTdCollect);
+  if($("tdType")) $("tdType").addEventListener("change", function(){ updateLeadHint(); suggestTdCollect(); });
+  if($("tdCollect")) $("tdCollect").addEventListener("change", function(){ tdCollectTouched = true; });
+  suggestTdCollect();
   $("lockForm").addEventListener("submit", function(e){ e.preventDefault(); tryUnlock(); });
   $("pinInput").addEventListener("input", function(){ if(/^\d{4}$/.test(this.value)) tryUnlock(); });
   window.addEventListener("hashchange", route);
